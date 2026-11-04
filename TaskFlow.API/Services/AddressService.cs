@@ -125,6 +125,7 @@ public class AddressService
             }
         }
 
+        // PUT is a full replacement - all fields are required
         addr.Type = dto.Type;
         addr.FirstName = dto.FirstName;
         addr.LastName = dto.LastName;
@@ -136,6 +137,47 @@ public class AddressService
         addr.Country = dto.Country;
         addr.Phone = dto.Phone;
         addr.IsDefault = dto.IsDefault;
+        addr.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return await GetAddressByIdAsync(userId, addressId);
+    }
+
+    public async Task<AddressDto?> PatchAddressAsync(Guid userId, Guid addressId, UpdateAddressDto dto)
+    {
+        var addr = await _context.Addresses
+            .FirstOrDefaultAsync(a => a.Id == addressId && a.UserId == userId);
+
+        if (addr == null) return null;
+
+        // PATCH is partial update - only update provided fields
+        if (dto.Type != null) addr.Type = dto.Type;
+        if (dto.FirstName != null) addr.FirstName = dto.FirstName;
+        if (dto.LastName != null) addr.LastName = dto.LastName;
+        if (dto.AddressLine1 != null) addr.AddressLine1 = dto.AddressLine1;
+        if (dto.AddressLine2 != null) addr.AddressLine2 = dto.AddressLine2;
+        if (dto.City != null) addr.City = dto.City;
+        if (dto.State != null) addr.State = dto.State;
+        if (dto.PostalCode != null) addr.PostalCode = dto.PostalCode;
+        if (dto.Country != null) addr.Country = dto.Country;
+        if (dto.Phone != null) addr.Phone = dto.Phone;
+        if (dto.IsDefault.HasValue)
+        {
+            if (dto.IsDefault.Value && !addr.IsDefault)
+            {
+                // Remove default from other addresses of same type
+                var existingDefaults = await _context.Addresses
+                    .Where(a => a.UserId == userId && a.Type == dto.Type && a.Id != addressId && a.IsDefault)
+                    .ToListAsync();
+
+                foreach (var existingDefault in existingDefaults)
+                {
+                    existingDefault.IsDefault = false;
+                }
+            }
+            addr.IsDefault = dto.IsDefault.Value;
+        }
         addr.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
