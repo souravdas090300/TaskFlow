@@ -55,7 +55,7 @@ public class CartServiceTests
         // If test uses hardcoded 0.18/50/5.99, these assertions will FAIL
         result.Subtotal.Should().Be(100.00m);
         result.Tax.Should().Be(19.00m); // 100 * 0.19 = 19.00 (NOT 18.00)
-        result.Shipping.Should().Be(0m); // Threshold is 999, so shipping applies: 0 (NOT 5.99 or 0)
+        result.Shipping.Should().Be(0m); // Threshold is 999, so shipping applies: 0 (NOT 5.99)
         result.Total.Should().Be(119.00m); // 100 + 19 + 0 = 119.00 (NOT 118.00 or 123.99)
     }
 
