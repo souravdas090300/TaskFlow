@@ -1,0 +1,37 @@
+# .NET
+bin/
+obj/
+out/
+*.sln
+*.user
+*.suo
+*.cache
+*.log
+
+# Docker
+docker-compose.yml
+Dockerfile
+Dockerfile.frontend
+.dockerignore
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+DEPLOYMENT.md
+DEPLOYMENT_DOCKER.md
+AUDIT_REPORT.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/

@@ -7,6 +7,27 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/main/Dotnet.gitignore
 
+# Security: Sensitive files and configuration
+.env
+.env.local
+.env.*.local
+.env.dev
+.env.prod
+.env.staging
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+*.sln.user
+*.user
+appsettings.Production.json
+appsettings.Staging.json
+config/production.json
+config/staging.json
+
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -52,3 +73,20 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# IDE specific
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln.docstates
+
+# OS specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Docker
+docker-compose.override.yml

@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # 1. TaskFlow API (.NET Application)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskflow-api-dev
+    env_file:
+      - .env.dev
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Host=${DB_HOST:-localhost};Port=${DB_PORT:-5432};Database=${DB_NAME:-taskflow};Username=${DB_USER:-taskflow};Password=${DB_PASSWORD}
+      - Authentication__Google__ClientId=${GOOGLE_CLIENT_ID}
+      - Authentication__Google__ClientSecret=${GOOGLE_CLIENT_SECRET}
+    ports:
+      - "5000:80"
+    depends_on:
+      - db
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+
+  # 2. TaskFlow Frontend (React + Nginx)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: taskflow-frontend-dev
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+
+  # 3. PostgreSQL Database
+  db:
+    image: postgres:17-alpine
+    container_name: taskflow-db-dev
+    environment:
+      - POSTGRES_DB=${DB_NAME:-taskflow}
+      - POSTGRES_USER=${DB_USER:-taskflow}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taskflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  taskflow-network:
+    driver: bridge
+
+volumes:
+  postgres-data-dev:
+    driver: local

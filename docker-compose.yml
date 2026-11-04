@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # 1. TaskFlow API (.NET Application)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskflow-api
+    env_file:
+      - .env
+    environment:
+      - ASPNETCORE_ENVIRONMENT=${ASPNETCORE_ENVIRONMENT:-Development}
+      - ASPNETCORE_URLS=${ASPNETCORE_URLS:-http://+:80}
+      - ConnectionStrings__DefaultConnection=Host=${DB_HOST:-db};Port=${DB_PORT:-5432};Database=${DB_NAME:-taskflow};Username=${DB_USER:-taskflow};Password=${DB_PASSWORD}
+      - Authentication__Google__ClientId=${GOOGLE_CLIENT_ID}
+      - Authentication__Google__ClientSecret=${GOOGLE_CLIENT_SECRET}
+    expose:
+      - "80"
+    depends_on:
+      - db
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+
+  # 2. TaskFlow Frontend (React + Nginx)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: taskflow-frontend
+    expose:
+      - "80"
+    depends_on:
+      - api
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+
+  # 3. PostgreSQL Database
+  db:
+    image: postgres:17-alpine
+    container_name: taskflow-db
+    environment:
+      - POSTGRES_DB=${DB_NAME:-taskflow}
+      - POSTGRES_USER=${DB_USER:-taskflow}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - taskflow-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taskflow}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Nginx Proxy Manager (Manages HTTPS Certificates)
+  nginx-proxy-manager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx_proxy_manager
+    restart: unless-stopped
+    ports:
+      - '80:80'   # Required by Let's Encrypt to verify your domain
+      - '443:443' # Handles your secure HTTPS traffic
+      - '81:81'   # The admin dashboard configuration page
+    volumes:
+      - npm_data:/data
+      - npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - taskflow-network
+
+  # 5. DuckDNS Updater (Keeps your domain pointing to your VPS)
+  duckdns-updater:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns_updater
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Malta
+      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}
+      - TOKEN=${DUCKDNS_TOKEN}
+      - LOG_FILE=false
+    restart: unless-stopped
+
+networks:
+  taskflow-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local
+  npm_data:
+    driver: local
+  npm_letsencrypt:
+    driver: local
