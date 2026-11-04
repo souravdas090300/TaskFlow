@@ -499,6 +499,20 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.ToTable("Payments");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.ProcessedWebhookEvent", b =>
+                {
+                    b.Property<string>("EventId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTime>("ProcessedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("EventId");
+
+                    b.ToTable("ProcessedWebhookEvents");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.Product", b =>
                 {
                     b.Property<Guid>("Id")
@@ -542,6 +556,12 @@ namespace TaskFlow.Infrastructure.Migrations
 
                     b.Property<int>("ReviewCount")
                         .HasColumnType("integer");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("bytea");
 
                     b.Property<string>("SKU")
                         .HasMaxLength(100)

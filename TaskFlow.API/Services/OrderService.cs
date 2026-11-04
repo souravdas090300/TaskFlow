@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using TaskFlow.Application.DTOs;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
@@ -97,7 +98,9 @@ public class OrderService
         var subtotal = cart.Items.Sum(i => i.UnitPrice * i.Quantity);
         var taxRate = _configuration.GetValue<decimal>("OrderSettings:TaxRate");
         var tax = subtotal * taxRate;
-        var shipping = subtotal >= 50 ? 0 : 5.99m;
+        var freeShippingThreshold = _configuration.GetValue<decimal>("OrderSettings:FreeShippingThreshold");
+        var shippingCost = _configuration.GetValue<decimal>("OrderSettings:ShippingCost");
+        var shipping = subtotal >= freeShippingThreshold ? 0 : shippingCost;
         var total = subtotal + tax + shipping;
 
         // Generate order number
@@ -259,10 +262,6 @@ public class OrderService
         if (order == null)
             return false;
 
-        // Idempotency check - only process if not already paid with this event
-        if (order.Status == "Paid" && order.StripeEventId == eventId)
-            return true; // Already processed this event
-
         // Cannot process if already paid with different payment intent
         if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
             return false;
@@ -271,24 +270,36 @@ public class OrderService
         if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
             return false;
 
+        // Insert processed event record BEFORE updating order - this provides transactional idempotency
+        // If the same event ID is delivered twice, the unique constraint will fail and we catch DbUpdateException
+        _context.ProcessedWebhookEvents.Add(new ProcessedWebhookEvent
+        {
+            EventId = eventId,
+            ProcessedAt = DateTime.UtcNow
+        });
+
         order.StripePaymentIntentId = paymentIntentId;
         order.StripeEventId = eventId;
         order.Status = "Paid";
         order.PaidAt = DateTime.UtcNow;
 
-        // Reduce stock in transaction
+        // Get order items for stock reduction
         var orderItems = await _context.OrderItems
             .Where(oi => oi.OrderId == orderId)
             .ToListAsync();
 
+        // Atomic stock reduction - use SQL UPDATE to prevent overselling
+        // This ensures stock is only decremented if sufficient stock exists
         foreach (var item in orderItems)
         {
-            var product = await _context.Products.FindAsync(item.ProductId);
-            if (product != null)
+            var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
+                item.Quantity, item.ProductId);
+
+            if (rowsAffected == 0)
             {
-                product.Stock -= item.Quantity;
-                if (product.Stock < 0)
-                    product.Stock = 0; // Prevent negative stock
+                // Insufficient stock - rollback transaction and fail
+                throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
             }
         }
 
@@ -301,9 +312,18 @@ public class OrderService
             _context.CartItems.RemoveRange(cart.Items);
         }
 
-        await _context.SaveChangesAsync();
+        try
+        {
+            await _context.SaveChangesAsync();
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (IsDuplicateKeyException(ex))
+        {
+            // Duplicate key violation means this event was already processed
+            // Return true to indicate success (idempotent)
+            return true;
+        }
 
-        // Send order confirmation email
+        // Send order confirmation email (after successful transaction)
         var user = await _context.Users.FindAsync(order.UserId);
         if (user != null)
         {
@@ -317,6 +337,21 @@ public class OrderService
         }
 
         return true;
+    }
+
+    private static bool IsDuplicateKeyException(Microsoft.EntityFrameworkCore.DbUpdateException ex)
+    {
+        // Check for PostgreSQL unique constraint violation (23505)
+        // and SQL Server unique constraint violation (2601, 2627)
+        var sqlException = ex.InnerException as Npgsql.PostgresException;
+        if (sqlException != null)
+        {
+            return sqlException.SqlState == "23505"; // unique_violation
+        }
+
+        // For SQL Server or other providers, check inner exception
+        return ex.InnerException?.Message.Contains("unique") == true ||
+               ex.InnerException?.Message.Contains("duplicate") == true;
     }
 
     public async Task<bool> ProcessCashOnDeliveryAsync(Guid orderId)

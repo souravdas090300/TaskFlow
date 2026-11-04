@@ -25,6 +25,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Coupon> Coupons { get; set; } = null!;
     public DbSet<Review> Reviews { get; set; } = null!;
     public DbSet<WishlistItem> WishlistItems { get; set; } = null!;
+    public DbSet<ProcessedWebhookEvent> ProcessedWebhookEvents { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -209,6 +210,13 @@ public class ApplicationDbContext : DbContext
                 .WithMany(p => p.WishlistItems)
                 .HasForeignKey(e => e.ProductId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ProcessedWebhookEvent configuration
+        modelBuilder.Entity<ProcessedWebhookEvent>(entity =>
+        {
+            entity.HasKey(e => e.EventId);
+            entity.Property(e => e.EventId).HasMaxLength(255);
         });
     }
 }

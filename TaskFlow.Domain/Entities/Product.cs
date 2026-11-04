@@ -27,6 +27,10 @@ namespace TaskFlow.Domain.Entities
         [Required]
         public int Stock { get; set; } = 0;
 
+        // Concurrency token for optimistic locking on stock updates
+        [Timestamp]
+        public byte[] RowVersion { get; set; } = null!;
+
         // Brand
         [MaxLength(255)]
         public string? Brand { get; set; }
