@@ -15,6 +15,7 @@ export interface OrderItem {
 export interface Order {
   id: string;
   userId: string;
+  userEmail?: string;
   orderNumber: string;
   status: 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
   paymentMethod: 'Stripe' | 'CashOnDelivery';
@@ -29,10 +30,14 @@ export interface Order {
   shippedAt?: string;
   deliveredAt?: string;
   cancelledAt?: string;
+  trackingNumber?: string;
   shippingAddress?: any;
   billingAddress?: any;
   items: OrderItem[];
 }
+
+// Alias for admin compatibility
+export type OrderDto = Order;
 
 export interface Checkout {
   items: CartItem[];

@@ -39,6 +39,7 @@ builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<StripeService>();
+builder.Services.AddScoped<EmailService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
@@ -673,6 +674,62 @@ app.MapPost("/api/orders/{id}/cancel", async (HttpContext context, Guid id, Orde
 })
     .WithName("CancelOrder")
     .RequireAuthorization();
+
+// Admin: Get all orders
+app.MapGet("/api/admin/orders", async (OrderService orderService) =>
+{
+    var orders = await orderService.GetAllOrdersAsync();
+    return Results.Ok(orders);
+})
+    .WithName("GetAllOrders")
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+// Admin: Update order status
+app.MapPut("/api/admin/orders/{id}/status", async (Guid id, string status, OrderService orderService) =>
+{
+    var success = await orderService.UpdateOrderStatusAsync(id, status);
+    return success ? Results.Ok(new { message = "Order status updated" }) : Results.NotFound();
+})
+    .WithName("UpdateOrderStatus")
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+// Admin: Update shipping tracking
+app.MapPut("/api/admin/orders/{id}/tracking", async (Guid id, string trackingNumber, OrderService orderService) =>
+{
+    var success = await orderService.UpdateOrderTrackingAsync(id, trackingNumber);
+    return success ? Results.Ok(new { message = "Tracking updated" }) : Results.NotFound();
+})
+    .WithName("UpdateOrderTracking")
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+// Admin: Get dashboard statistics
+app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
+{
+    var totalOrders = await context.Orders.CountAsync();
+    var totalRevenue = await context.Orders.Where(o => o.Status == "Paid" || o.Status == "Processing" || o.Status == "Shipped" || o.Status == "Delivered").SumAsync(o => o.Total);
+    var pendingOrders = await context.Orders.CountAsync(o => o.Status == "Pending");
+    var processingOrders = await context.Orders.CountAsync(o => o.Status == "Processing");
+    var shippedOrders = await context.Orders.CountAsync(o => o.Status == "Shipped");
+    var deliveredOrders = await context.Orders.CountAsync(o => o.Status == "Delivered");
+    var cancelledOrders = await context.Orders.CountAsync(o => o.Status == "Cancelled");
+    var totalProducts = await context.Products.CountAsync();
+    var lowStockProducts = await context.Products.CountAsync(p => p.Stock < 10);
+
+    return Results.Ok(new
+    {
+        totalOrders,
+        totalRevenue,
+        pendingOrders,
+        processingOrders,
+        shippedOrders,
+        deliveredOrders,
+        cancelledOrders,
+        totalProducts,
+        lowStockProducts
+    });
+})
+    .WithName("GetAdminStats")
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Create Stripe checkout session
 app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, StripeService stripeService, OrderService orderService) =>

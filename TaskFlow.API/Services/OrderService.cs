@@ -8,10 +8,12 @@ namespace TaskFlow.API.Services;
 public class OrderService
 {
     private readonly ApplicationDbContext _context;
+    private readonly EmailService _emailService;
 
-    public OrderService(ApplicationDbContext context)
+    public OrderService(ApplicationDbContext context, EmailService emailService)
     {
         _context = context;
+        _emailService = emailService;
     }
 
     public async Task<CheckoutDto?> GetCheckoutSummaryAsync(Guid userId)
@@ -129,6 +131,19 @@ public class OrderService
         }
 
         await _context.SaveChangesAsync();
+
+        // Send order confirmation email
+        var user = await _context.Users.FindAsync(userId);
+        if (user != null)
+        {
+            await _emailService.SendOrderConfirmationEmailAsync(
+                user.Email,
+                $"{user.FirstName} {user.LastName}",
+                orderNumber,
+                total,
+                DateTime.UtcNow.ToString("MMMM dd, yyyy")
+            );
+        }
 
         return await GetOrderByIdAsync(userId, order.Id);
     }
@@ -272,6 +287,20 @@ public class OrderService
         }
 
         await _context.SaveChangesAsync();
+
+        // Send order confirmation email
+        var user = await _context.Users.FindAsync(order.UserId);
+        if (user != null)
+        {
+            await _emailService.SendOrderConfirmationEmailAsync(
+                user.Email,
+                $"{user.FirstName} {user.LastName}",
+                order.OrderNumber,
+                order.Total,
+                order.PaidAt?.ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.ToString("MMMM dd, yyyy")
+            );
+        }
+
         return true;
     }
 
@@ -310,6 +339,20 @@ public class OrderService
         }
 
         await _context.SaveChangesAsync();
+
+        // Send order confirmation email for COD orders
+        var user = await _context.Users.FindAsync(order.UserId);
+        if (user != null)
+        {
+            await _emailService.SendOrderConfirmationEmailAsync(
+                user.Email,
+                $"{user.FirstName} {user.LastName}",
+                order.OrderNumber,
+                order.Total,
+                order.PaidAt?.ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.ToString("MMMM dd, yyyy")
+            );
+        }
+
         return true;
     }
 
@@ -343,6 +386,159 @@ public class OrderService
         }
 
         await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<List<OrderDto>> GetAllOrdersAsync()
+    {
+        var orders = await _context.Orders
+            .Include(o => o.Items)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var result = new List<OrderDto>();
+        foreach (var order in orders)
+        {
+            var shippingAddress = await _context.Addresses
+                .FirstOrDefaultAsync(a => a.UserId == order.UserId && a.Type == "Shipping" && a.IsDefault);
+
+            var billingAddress = await _context.Addresses
+                .FirstOrDefaultAsync(a => a.UserId == order.UserId && a.Type == "Billing" && a.IsDefault);
+
+            var user = await _context.Users.FindAsync(order.UserId);
+
+            result.Add(new OrderDto
+            {
+                Id = order.Id,
+                UserId = order.UserId,
+                UserEmail = user?.Email,
+                OrderNumber = order.OrderNumber,
+                Status = Enum.Parse<OrderStatus>(order.Status),
+                PaymentMethod = Enum.Parse<PaymentMethod>(order.PaymentMethod),
+                Subtotal = order.Subtotal,
+                Tax = order.Tax,
+                Shipping = order.ShippingCost,
+                Total = order.Total,
+                StripePaymentIntentId = order.StripePaymentIntentId,
+                StripeEventId = order.StripeEventId,
+                CreatedAt = order.CreatedAt,
+                PaidAt = order.PaidAt,
+                ShippedAt = order.ShippedAt,
+                DeliveredAt = order.DeliveredAt,
+                CancelledAt = order.CancelledAt,
+                TrackingNumber = order.TrackingNumber,
+                ShippingAddress = shippingAddress != null ? new AddressDto
+                {
+                    Id = shippingAddress.Id,
+                    UserId = shippingAddress.UserId,
+                    Type = shippingAddress.Type,
+                    FirstName = shippingAddress.FirstName,
+                    LastName = shippingAddress.LastName,
+                    AddressLine1 = shippingAddress.AddressLine1,
+                    AddressLine2 = shippingAddress.AddressLine2,
+                    City = shippingAddress.City,
+                    State = shippingAddress.State,
+                    PostalCode = shippingAddress.PostalCode,
+                    Country = shippingAddress.Country,
+                    Phone = shippingAddress.Phone,
+                    IsDefault = shippingAddress.IsDefault,
+                    CreatedAt = shippingAddress.CreatedAt
+                } : null,
+                BillingAddress = billingAddress != null ? new AddressDto
+                {
+                    Id = billingAddress.Id,
+                    UserId = billingAddress.UserId,
+                    Type = billingAddress.Type,
+                    FirstName = billingAddress.FirstName,
+                    LastName = billingAddress.LastName,
+                    AddressLine1 = billingAddress.AddressLine1,
+                    AddressLine2 = billingAddress.AddressLine2,
+                    City = billingAddress.City,
+                    State = billingAddress.State,
+                    PostalCode = billingAddress.PostalCode,
+                    Country = billingAddress.Country,
+                    Phone = billingAddress.Phone,
+                    IsDefault = billingAddress.IsDefault,
+                    CreatedAt = billingAddress.CreatedAt
+                } : null,
+                Items = order.Items.Select(i => new OrderItemDto
+                {
+                    Id = i.Id,
+                    OrderId = i.OrderId,
+                    ProductId = i.ProductId,
+                    ProductName = i.ProductName,
+                    ProductImage = i.ProductImageUrl,
+                    Quantity = i.Quantity,
+                    UnitPrice = i.UnitPrice,
+                    Total = i.TotalPrice
+                }).ToList()
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<bool> UpdateOrderStatusAsync(Guid orderId, string status)
+    {
+        var order = await _context.Orders.FindAsync(orderId);
+        if (order == null)
+            return false;
+
+        order.Status = status;
+
+        if (status == "Shipped")
+        {
+            order.ShippedAt = DateTime.UtcNow;
+        }
+        else if (status == "Delivered")
+        {
+            order.DeliveredAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+
+        // Send shipping notification if status changed to Shipped
+        if (status == "Shipped" && !string.IsNullOrEmpty(order.TrackingNumber))
+        {
+            var user = await _context.Users.FindAsync(order.UserId);
+            if (user != null)
+            {
+                await _emailService.SendShippedNotificationEmailAsync(
+                    user.Email,
+                    $"{user.FirstName} {user.LastName}",
+                    order.OrderNumber,
+                    order.TrackingNumber
+                );
+            }
+        }
+
+        return true;
+    }
+
+    public async Task<bool> UpdateOrderTrackingAsync(Guid orderId, string trackingNumber)
+    {
+        var order = await _context.Orders.FindAsync(orderId);
+        if (order == null)
+            return false;
+
+        order.TrackingNumber = trackingNumber;
+        await _context.SaveChangesAsync();
+
+        // Send shipping notification if order is already shipped
+        if (order.Status == "Shipped")
+        {
+            var user = await _context.Users.FindAsync(order.UserId);
+            if (user != null)
+            {
+                await _emailService.SendShippedNotificationEmailAsync(
+                    user.Email,
+                    $"{user.FirstName} {user.LastName}",
+                    order.OrderNumber,
+                    trackingNumber
+                );
+            }
+        }
+
         return true;
     }
 }

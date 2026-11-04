@@ -6,6 +6,7 @@ public class OrderDto
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
+    public string? UserEmail { get; set; }
     public string OrderNumber { get; set; } = string.Empty;
     public OrderStatus Status { get; set; }
     public PaymentMethod PaymentMethod { get; set; }
@@ -20,6 +21,7 @@ public class OrderDto
     public DateTime? ShippedAt { get; set; }
     public DateTime? DeliveredAt { get; set; }
     public DateTime? CancelledAt { get; set; }
+    public string? TrackingNumber { get; set; }
     public AddressDto? ShippingAddress { get; set; }
     public AddressDto? BillingAddress { get; set; }
     public List<OrderItemDto> Items { get; set; } = new();
