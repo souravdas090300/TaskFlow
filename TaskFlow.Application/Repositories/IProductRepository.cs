@@ -15,4 +15,10 @@ public interface IProductRepository
     Task UpdateAsync(Product product);
     Task DeleteAsync(Product product);
     Task<bool> ExistsBySlugAsync(string slug);
+    
+    /// <summary>
+    /// Atomically decrements stock by the given quantity.
+    /// Returns true if successful, false if insufficient stock.
+    /// </summary>
+    Task<bool> DecrementStockAtomicallyAsync(Guid productId, int quantity);
 }

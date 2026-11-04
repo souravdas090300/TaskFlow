@@ -63,4 +63,13 @@ public class ProductRepository : IProductRepository
     {
         return await _context.Products.AnyAsync(p => p.Slug == slug);
     }
+
+    public async Task<bool> DecrementStockAtomicallyAsync(Guid productId, int quantity)
+    {
+        var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
+            "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
+            quantity, productId);
+
+        return rowsAffected > 0;
+    }
 }
