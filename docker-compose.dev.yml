@@ -12,7 +12,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:80
-      - ConnectionStrings__DefaultConnection=Host=${DB_HOST:-localhost};Port=${DB_PORT:-5432};Database=${DB_NAME:-taskflow};Username=${DB_USER:-taskflow};Password=${DB_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=taskflow;Username=taskflow;Password=${DB_PASSWORD}
       - Authentication__Google__ClientId=${GOOGLE_CLIENT_ID}
       - Authentication__Google__ClientSecret=${GOOGLE_CLIENT_SECRET}
     ports:
@@ -42,8 +42,8 @@ services:
     image: postgres:17-alpine
     container_name: taskflow-db-dev
     environment:
-      - POSTGRES_DB=${DB_NAME:-taskflow}
-      - POSTGRES_USER=${DB_USER:-taskflow}
+      - POSTGRES_DB=taskflow
+      - POSTGRES_USER=taskflow
       - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres-data-dev:/var/lib/postgresql/data
@@ -53,7 +53,7 @@ services:
       - taskflow-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-taskflow}"]
+      test: ["CMD-SHELL", "pg_isready -U taskflow"]
       interval: 10s
       timeout: 5s
       retries: 5
