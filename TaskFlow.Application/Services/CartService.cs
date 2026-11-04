@@ -1,39 +1,36 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Repositories;
 using TaskFlow.Domain.Entities;
-using TaskFlow.Infrastructure;
 
-namespace TaskFlow.API.Services;
+namespace TaskFlow.Application.Services;
 
 public class CartService
 {
-    private readonly ApplicationDbContext _context;
+    private readonly ICartRepository _cartRepository;
+    private readonly IProductRepository _productRepository;
+    private readonly IConfiguration _configuration;
 
-    public CartService(ApplicationDbContext context)
+    public CartService(ICartRepository cartRepository, IProductRepository productRepository, IConfiguration configuration)
     {
-        _context = context;
+        _cartRepository = cartRepository;
+        _productRepository = productRepository;
+        _configuration = configuration;
     }
 
     public async Task<CartDto> GetCartAsync(Guid userId)
     {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-                .ThenInclude(i => i.Product)
-            .Include(c => c.Items)
-                .ThenInclude(i => i.ProductVariant)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
+        var cart = await _cartRepository.GetByUserIdWithItemsAsync(userId);
 
         if (cart == null)
         {
-            // Create new cart
             cart = new Cart
             {
                 Id = Guid.NewGuid(),
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow
             };
-            _context.Carts.Add(cart);
-            await _context.SaveChangesAsync();
+            await _cartRepository.AddAsync(cart);
         }
 
         return MapToCartDto(cart);
@@ -41,9 +38,7 @@ public class CartService
 
     public async Task<CartDto> AddToCartAsync(Guid userId, AddToCartDto dto)
     {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
+        var cart = await _cartRepository.GetByUserIdWithItemsAsync(userId);
 
         if (cart == null)
         {
@@ -53,49 +48,32 @@ public class CartService
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow
             };
-            _context.Carts.Add(cart);
+            await _cartRepository.AddAsync(cart);
         }
 
-        // Get product
-        var product = await _context.Products.FindAsync(dto.ProductId);
+        var product = await _productRepository.GetByIdAsync(dto.ProductId);
         if (product == null)
         {
             throw new InvalidOperationException("Product not found");
         }
 
-        // Get variant if specified
-        ProductVariant? variant = null;
-        if (dto.ProductVariantId.HasValue)
-        {
-            variant = await _context.ProductVariants.FindAsync(dto.ProductVariantId.Value);
-            if (variant == null)
-            {
-                throw new InvalidOperationException("Product variant not found");
-            }
-        }
-
-        // Check stock
-        var availableStock = variant?.Stock ?? product.Stock;
+        var availableStock = product.Stock;
         if (availableStock < dto.Quantity)
         {
             throw new InvalidOperationException("Insufficient stock");
         }
 
-        // Check if item already exists in cart
         var existingItem = cart.Items.FirstOrDefault(i =>
             i.ProductId == dto.ProductId &&
             i.ProductVariantId == dto.ProductVariantId);
 
         if (existingItem != null)
         {
-            // Update quantity
             existingItem.Quantity += dto.Quantity;
             existingItem.UpdatedAt = DateTime.UtcNow;
         }
         else
         {
-            // Add new item
-            var price = variant?.Price ?? product.Price;
             var cartItem = new CartItem
             {
                 Id = Guid.NewGuid(),
@@ -103,22 +81,19 @@ public class CartService
                 ProductId = dto.ProductId,
                 ProductVariantId = dto.ProductVariantId,
                 Quantity = dto.Quantity,
-                UnitPrice = price,
+                UnitPrice = product.Price,
                 CreatedAt = DateTime.UtcNow
             };
-            _context.CartItems.Add(cartItem);
+            cart.Items.Add(cartItem);
         }
 
-        await _context.SaveChangesAsync();
-
+        await _cartRepository.UpdateAsync(cart);
         return await GetCartAsync(userId);
     }
 
     public async Task<CartDto> UpdateCartItemAsync(Guid userId, Guid cartItemId, UpdateCartItemDto dto)
     {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
+        var cart = await _cartRepository.GetByUserIdWithItemsAsync(userId);
 
         if (cart == null)
         {
@@ -131,10 +106,8 @@ public class CartService
             throw new InvalidOperationException("Cart item not found");
         }
 
-        // Check stock
-        var product = await _context.Products.FindAsync(item.ProductId);
-        var variant = item.ProductVariantId.HasValue ? await _context.ProductVariants.FindAsync(item.ProductVariantId.Value) : null;
-        var availableStock = variant?.Stock ?? product?.Stock ?? 0;
+        var product = await _productRepository.GetByIdAsync(item.ProductId);
+        var availableStock = product?.Stock ?? 0;
 
         if (availableStock < dto.Quantity)
         {
@@ -144,16 +117,13 @@ public class CartService
         item.Quantity = dto.Quantity;
         item.UpdatedAt = DateTime.UtcNow;
 
-        await _context.SaveChangesAsync();
-
+        await _cartRepository.UpdateAsync(cart);
         return await GetCartAsync(userId);
     }
 
     public async Task<CartDto> RemoveFromCartAsync(Guid userId, Guid cartItemId)
     {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
+        var cart = await _cartRepository.GetByUserIdWithItemsAsync(userId);
 
         if (cart == null)
         {
@@ -166,23 +136,14 @@ public class CartService
             throw new InvalidOperationException("Cart item not found");
         }
 
-        _context.CartItems.Remove(item);
-        await _context.SaveChangesAsync();
-
+        cart.Items.Remove(item);
+        await _cartRepository.UpdateAsync(cart);
         return await GetCartAsync(userId);
     }
 
     public async Task ClearCartAsync(Guid userId)
     {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
-
-        if (cart != null)
-        {
-            _context.CartItems.RemoveRange(cart.Items);
-            await _context.SaveChangesAsync();
-        }
+        await _cartRepository.ClearCartItemsAsync(userId);
     }
 
     private CartDto MapToCartDto(Cart cart)
@@ -202,8 +163,11 @@ public class CartService
         }).ToList();
 
         var subtotal = items.Sum(i => i.TotalPrice);
-        var tax = subtotal * 0.18m; // 18% VAT for Malta
-        var shipping = subtotal > 0 ? (subtotal >= 50 ? 0 : 5.99m) : 0; // Free shipping over 50
+        var taxRate = _configuration.GetValue<decimal>("OrderSettings:TaxRate");
+        var tax = subtotal * taxRate;
+        var freeShippingThreshold = _configuration.GetValue<decimal>("OrderSettings:FreeShippingThreshold");
+        var shippingCost = _configuration.GetValue<decimal>("OrderSettings:ShippingCost");
+        var shipping = subtotal > 0 ? (subtotal >= freeShippingThreshold ? 0 : shippingCost) : 0;
 
         return new CartDto
         {
