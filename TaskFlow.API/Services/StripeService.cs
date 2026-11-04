@@ -4,12 +4,10 @@ namespace TaskFlow.API.Services;
 
 public class StripeService
 {
-    private readonly string _secretKey;
     private readonly string _webhookSecret;
 
     public StripeService(IConfiguration configuration)
     {
-        _secretKey = configuration["Stripe:SecretKey"] ?? "";
         _webhookSecret = configuration["Stripe:WebhookSecret"] ?? "";
     }
 
@@ -18,7 +16,7 @@ public class StripeService
         // TODO: Implement actual Stripe checkout session creation
         // For now, return a mock response
         Console.WriteLine($"Stripe checkout session requested for order {orderId} with amount {amount}");
-        
+
         return new CheckoutSessionResponse
         {
             SessionId = Guid.NewGuid().ToString(),

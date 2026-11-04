@@ -85,10 +85,6 @@ public class OrderService
         if (shippingAddress == null)
             return null;
 
-        var billingAddress = dto.BillingAddressId.HasValue
-            ? await _context.Addresses.FirstOrDefaultAsync(a => a.Id == dto.BillingAddressId.Value && a.UserId == userId)
-            : shippingAddress;
-
         // Calculate totals server-side
         var subtotal = cart.Items.Sum(i => i.UnitPrice * i.Quantity);
         var tax = subtotal * 0.18m; // 18% VAT
