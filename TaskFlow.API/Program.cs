@@ -11,9 +11,11 @@ using TaskFlow.API.Middleware;
 using TaskFlow.API.Services;
 using TaskFlow.API.Models;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
 using TaskFlow.Application.Validators;
 using TaskFlow.Infrastructure;
+using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Services;
 using FluentValidation;
 using AspNetCoreRateLimit;
@@ -46,6 +48,12 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
+
+// Register repositories
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<IProcessedWebhookEventRepository, ProcessedWebhookEventRepository>();
+builder.Services.AddScoped<ICartRepository, CartRepository>();
 
 // Register email service
 builder.Services.AddScoped<IEmailService, MockEmailService>();
