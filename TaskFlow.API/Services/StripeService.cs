@@ -17,8 +17,11 @@ public class StripeService
 
     public async Task<CheckoutSessionResponse?> CreateCheckoutSessionAsync(Guid orderId, decimal amount, string successUrl, string cancelUrl, string? orderNumber = null)
     {
-        // TODO: Implement with proper Stripe.net checkout session creation
-        // For now, return mock to allow build
+        // NOTE: Full Stripe.net checkout session creation requires Stripe.net SessionService
+        // Current implementation uses mock to allow build. Production requires:
+        // - SessionService.CreateAsync with SessionCreateOptions
+        // - Proper metadata binding (OrderId)
+        // - Success/cancel URL configuration
         Console.WriteLine($"Stripe checkout session requested for order {orderId} with amount {amount}");
 
         return new CheckoutSessionResponse
@@ -38,7 +41,7 @@ public class StripeService
 
         try
         {
-            var stripeEvent = EventUtility.ConstructEvent(
+            EventUtility.ConstructEvent(
                 jsonPayload,
                 sigHeader,
                 _webhookSecret,

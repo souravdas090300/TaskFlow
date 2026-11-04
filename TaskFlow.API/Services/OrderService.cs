@@ -268,7 +268,7 @@ public class OrderService
             return false;
 
         // Cannot process if order is cancelled, shipped, or delivered
-        if (order.Status == "Cancelled" || order.Status == "Shipped" || order.Status == "Delivered")
+        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
             return false;
 
         order.StripePaymentIntentId = paymentIntentId;
@@ -380,7 +380,7 @@ public class OrderService
             return false;
 
         // Can only cancel if not shipped
-        if (order.Status == "Shipped" || order.Status == "Delivered")
+        if (order.Status == ShippedStatus || order.Status == "Delivered")
             return false;
 
         order.Status = "Cancelled";
@@ -540,7 +540,7 @@ public class OrderService
         await _context.SaveChangesAsync();
 
         // Send shipping notification if order is already shipped
-        if (order.Status == "Shipped")
+        if (order.Status == ShippedStatus)
         {
             var user = await _context.Users.FindAsync(order.UserId);
             if (user != null)

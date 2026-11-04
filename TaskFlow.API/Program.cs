@@ -8,11 +8,15 @@ using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
 using TaskFlow.API.Services;
+using TaskFlow.API.Models;
 using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Validators;
 using TaskFlow.Infrastructure;
 using FluentValidation;
 using AspNetCoreRateLimit;
+
+const string AdminRole = "Admin";
+const string AddressRouteTemplate = "/api/addresses/{id}";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -117,7 +121,7 @@ app.UseIpRateLimiting();
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    context.Database.Migrate();
+    await context.Database.MigrateAsync();
 }
 
 // Configure the HTTP request pipeline
@@ -179,16 +183,9 @@ app.MapGet("/db-health", (ApplicationDbContext context) =>
 // ============ PRODUCT ENDPOINTS ============
 
 // Get all products with filtering and pagination
-app.MapGet("/api/products", async (ProductService productService, 
-    int page = 1, 
-    int pageSize = 20,
-    Guid? categoryId = null,
-    string? search = null,
-    decimal? minPrice = null,
-    decimal? maxPrice = null,
-    string? sortBy = null) =>
+app.MapGet("/api/products", async (ProductService productService, ProductQueryDto query) =>
 {
-    var products = await productService.GetAllProductsAsync(page, pageSize, categoryId, search, minPrice, maxPrice, sortBy);
+    var products = await productService.GetAllProductsAsync(query.Page, query.PageSize, query.CategoryId, query.Search, query.MinPrice, query.MaxPrice, query.SortBy);
     return Results.Ok(products);
 })
     .WithName("GetAllProducts")
@@ -228,7 +225,7 @@ app.MapPost("/api/products", async (CreateProductDto dto, IValidator<CreateProdu
     return Results.Created($"/api/products/{product.Id}", product);
 })
     .WithName("CreateProduct")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Update product (Admin only)
 app.MapPut("/api/products/{id}", async (Guid id, UpdateProductDto dto, IValidator<UpdateProductDto> validator, ProductService productService) =>
@@ -246,7 +243,7 @@ app.MapPut("/api/products/{id}", async (Guid id, UpdateProductDto dto, IValidato
     return product != null ? Results.Ok(product) : Results.NotFound();
 })
     .WithName("UpdateProduct")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Delete product (Admin only)
 app.MapDelete("/api/products/{id}", async (Guid id, ProductService productService) =>
@@ -255,7 +252,7 @@ app.MapDelete("/api/products/{id}", async (Guid id, ProductService productServic
     return success ? Results.NoContent() : Results.NotFound();
 })
     .WithName("DeleteProduct")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Get featured products
 app.MapGet("/api/products/featured", async (ProductService productService, int limit = 10) =>
@@ -320,7 +317,7 @@ app.MapPost("/api/categories", async (CreateCategoryDto dto, IValidator<CreateCa
     return Results.Created($"/api/categories/{category.Id}", category);
 })
     .WithName("CreateCategory")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Update category (Admin only)
 app.MapPut("/api/categories/{id}", async (Guid id, UpdateCategoryDto dto, IValidator<UpdateCategoryDto> validator, CategoryService categoryService) =>
@@ -338,7 +335,7 @@ app.MapPut("/api/categories/{id}", async (Guid id, UpdateCategoryDto dto, IValid
     return category != null ? Results.Ok(category) : Results.NotFound();
 })
     .WithName("UpdateCategory")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Delete category (Admin only)
 app.MapDelete("/api/categories/{id}", async (Guid id, CategoryService categoryService) =>
@@ -347,7 +344,7 @@ app.MapDelete("/api/categories/{id}", async (Guid id, CategoryService categorySe
     return success ? Results.NoContent() : Results.BadRequest("Cannot delete category with products or subcategories");
 })
     .WithName("DeleteCategory")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // ============ AUTH ENDPOINTS ============
 
@@ -517,7 +514,7 @@ app.MapGet("/api/addresses", async (HttpContext context, AddressService addressS
     .RequireAuthorization();
 
 // Get address by ID
-app.MapGet("/api/addresses/{id}", async (HttpContext context, Guid id, AddressService addressService) =>
+app.MapGet(AddressRouteTemplate, async (HttpContext context, Guid id, AddressService addressService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -547,7 +544,7 @@ app.MapPost("/api/addresses", async (HttpContext context, CreateAddressDto dto, 
     .RequireAuthorization();
 
 // Update address (full replacement - requires all fields)
-app.MapPut("/api/addresses/{id}", async (HttpContext context, Guid id, UpdateAddressDto dto, IValidator<UpdateAddressDto> validator, AddressService addressService) =>
+app.MapPut(AddressRouteTemplate, async (HttpContext context, Guid id, UpdateAddressDto dto, IValidator<UpdateAddressDto> validator, AddressService addressService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -571,7 +568,7 @@ app.MapPut("/api/addresses/{id}", async (HttpContext context, Guid id, UpdateAdd
     .RequireAuthorization();
 
 // Patch address (partial update - only updates provided fields)
-app.MapPatch("/api/addresses/{id}", async (HttpContext context, Guid id, PatchAddressDto dto, AddressService addressService) =>
+app.MapPatch(AddressRouteTemplate, async (HttpContext context, Guid id, PatchAddressDto dto, AddressService addressService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -586,7 +583,7 @@ app.MapPatch("/api/addresses/{id}", async (HttpContext context, Guid id, PatchAd
     .RequireAuthorization();
 
 // Delete address
-app.MapDelete("/api/addresses/{id}", async (HttpContext context, Guid id, AddressService addressService) =>
+app.MapDelete(AddressRouteTemplate, async (HttpContext context, Guid id, AddressService addressService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -708,7 +705,7 @@ app.MapGet("/api/admin/orders", async (OrderService orderService) =>
     return Results.Ok(orders);
 })
     .WithName("GetAllOrders")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Admin: Update order status
 app.MapPut("/api/admin/orders/{id}/status", async (Guid id, string status, OrderService orderService) =>
@@ -717,7 +714,7 @@ app.MapPut("/api/admin/orders/{id}/status", async (Guid id, string status, Order
     return success ? Results.Ok(new { message = "Order status updated" }) : Results.NotFound();
 })
     .WithName("UpdateOrderStatus")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Admin: Update shipping tracking
 app.MapPut("/api/admin/orders/{id}/tracking", async (Guid id, string trackingNumber, OrderService orderService) =>
@@ -726,7 +723,7 @@ app.MapPut("/api/admin/orders/{id}/tracking", async (Guid id, string trackingNum
     return success ? Results.Ok(new { message = "Tracking updated" }) : Results.NotFound();
 })
     .WithName("UpdateOrderTracking")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Admin: Get dashboard statistics
 app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
@@ -755,7 +752,7 @@ app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
     });
 })
     .WithName("GetAdminStats")
-    .RequireAuthorization(policy => policy.RequireRole("Admin"));
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Create Stripe checkout session
 app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, StripeService stripeService, OrderService orderService) =>
@@ -848,9 +845,4 @@ app.MapGet("/logout", (HttpContext context, string? returnUrl = "/") =>
 app.MapFallbackToFile("index.html")
     .AllowAnonymous();
 
-app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+await app.RunAsync();
