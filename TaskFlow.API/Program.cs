@@ -12,6 +12,7 @@ using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Validators;
 using TaskFlow.Infrastructure;
 using FluentValidation;
+using AspNetCoreRateLimit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,6 +44,14 @@ builder.Services.AddScoped<EmailService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
+
+// Configure Rate Limiting
+builder.Services.AddMemoryCache();
+builder.Services.Configure<IpRateLimitOptions>(builder.Configuration.GetSection("IpRateLimiting"));
+builder.Services.Configure<IpRateLimitPolicies>(builder.Configuration.GetSection("IpRateLimitPolicies"));
+builder.Services.AddInMemoryRateLimiting();
+builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
+builder.Services.AddHttpContextAccessor();
 
 // Configure Authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
@@ -86,6 +95,9 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Use rate limiting
+app.UseIpRateLimiting();
 
 // Initialize database on startup
 using (var scope = app.Services.CreateScope())
