@@ -45,6 +45,14 @@ namespace TaskFlow.Domain.Entities
         [MaxLength(500)]
         public string? ProductImageUrl { get; set; }
 
+        // Alias for consistency with DTO
+        [NotMapped]
+        public string? ProductImage => ProductImageUrl;
+
+        // Alias for consistency with DTO
+        [NotMapped]
+        public decimal Total => TotalPrice;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties

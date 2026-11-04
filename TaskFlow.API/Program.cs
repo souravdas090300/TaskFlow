@@ -37,6 +37,8 @@ builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
+builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<StripeService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
@@ -585,6 +587,137 @@ app.MapGet("/api/addresses/default/{type}", async (HttpContext context, string t
 })
     .WithName("GetDefaultAddress")
     .RequireAuthorization();
+
+// ============ ORDER ENDPOINTS ============
+
+// Get checkout summary
+app.MapGet("/api/checkout", async (HttpContext context, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var checkout = await orderService.GetCheckoutSummaryAsync(userId);
+    return checkout != null ? Results.Ok(checkout) : Results.NotFound();
+})
+    .WithName("GetCheckout")
+    .RequireAuthorization();
+
+// Create order
+app.MapPost("/api/orders", async (HttpContext context, CreateOrderDto dto, IValidator<CreateOrderDto> validator, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var validationResult = await validator.ValidateAsync(dto);
+    if (!validationResult.IsValid)
+    {
+        var errors = validationResult.Errors
+            .GroupBy(e => e.PropertyName)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
+        return Results.ValidationProblem(errors);
+    }
+
+    var order = await orderService.CreateOrderAsync(userId, dto);
+    return order != null ? Results.Created($"/api/orders/{order.Id}", order) : Results.BadRequest("Cannot create order with empty cart");
+})
+    .WithName("CreateOrder")
+    .RequireAuthorization();
+
+// Get user's orders
+app.MapGet("/api/orders", async (HttpContext context, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var orders = await orderService.GetUserOrdersAsync(userId);
+    return Results.Ok(orders);
+})
+    .WithName("GetUserOrders")
+    .RequireAuthorization();
+
+// Get order by ID
+app.MapGet("/api/orders/{id}", async (HttpContext context, Guid id, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var order = await orderService.GetOrderByIdAsync(userId, id);
+    return order != null ? Results.Ok(order) : Results.NotFound();
+})
+    .WithName("GetOrderById")
+    .RequireAuthorization();
+
+// Cancel order
+app.MapPost("/api/orders/{id}/cancel", async (HttpContext context, Guid id, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var success = await orderService.CancelOrderAsync(userId, id);
+    return success ? Results.Ok(new { message = "Order cancelled" }) : Results.BadRequest("Cannot cancel this order");
+})
+    .WithName("CancelOrder")
+    .RequireAuthorization();
+
+// Create Stripe checkout session
+app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, StripeService stripeService, OrderService orderService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    // Fetch the order to get the amount and order number
+    var order = await orderService.GetOrderByIdAsync(userId, dto.OrderId);
+    if (order == null)
+    {
+        return Results.NotFound("Order not found");
+    }
+
+    var session = await stripeService.CreateCheckoutSessionAsync(dto.OrderId, order.Total, dto.SuccessUrl, dto.CancelUrl, order.OrderNumber);
+    return session != null ? Results.Ok(session) : Results.BadRequest("Failed to create checkout session");
+})
+    .WithName("CreateStripeCheckout")
+    .RequireAuthorization();
+
+// Stripe webhook endpoint
+app.MapPost("/api/stripe/webhook", async (HttpRequest request, StripeService stripeService, OrderService orderService) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var jsonPayload = await reader.ReadToEndAsync();
+    var sigHeader = request.Headers["Stripe-Signature"];
+
+    if (!stripeService.VerifyWebhookSignature(jsonPayload, sigHeader))
+    {
+        return Results.StatusCode(400);
+    }
+
+    var (paymentIntentId, orderId) = stripeService.GetPaymentDetailsFromEvent(jsonPayload, sigHeader);
+    if (paymentIntentId != null && orderId.HasValue)
+    {
+        var eventId = Guid.NewGuid().ToString(); // In production, use the actual event ID
+        await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, eventId);
+    }
+
+    return Results.Ok();
+})
+    .AllowAnonymous();
 
 // Legacy Authentication endpoints (for Google OAuth)
 app.MapGet("/login", (string? returnUrl = "/") =>

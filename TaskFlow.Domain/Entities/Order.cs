@@ -21,6 +21,21 @@ namespace TaskFlow.Domain.Entities
         [MaxLength(50)]
         public string Status { get; set; } = "Pending";
 
+        // Payment timestamps
+        public DateTime? PaidAt { get; set; }
+        public DateTime? ShippedAt { get; set; }
+        public DateTime? DeliveredAt { get; set; }
+
+        // Stripe integration
+        [MaxLength(255)]
+        public string? StripePaymentIntentId { get; set; }
+
+        [MaxLength(255)]
+        public string? StripeEventId { get; set; }
+
+        // Concurrency token for optimistic locking
+        public Guid ConcurrencyToken { get; set; } = Guid.NewGuid();
+
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal Subtotal { get; set; } = 0;
