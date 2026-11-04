@@ -19,6 +19,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
+// Configure JSON options to handle PATCH requests properly
+builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
+{
+    options.SerializerOptions.PropertyNamingPolicy = null; // Use exact property names
+    options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+});
+
 // Configure Entity Framework Core
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -192,7 +199,7 @@ app.MapPost("/api/products", async (CreateProductDto dto, IValidator<CreateProdu
     return Results.Created($"/api/products/{product.Id}", product);
 })
     .WithName("CreateProduct")
-    .AllowAnonymous();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Update product (Admin only)
 app.MapPut("/api/products/{id}", async (Guid id, UpdateProductDto dto, IValidator<UpdateProductDto> validator, ProductService productService) =>
@@ -210,7 +217,7 @@ app.MapPut("/api/products/{id}", async (Guid id, UpdateProductDto dto, IValidato
     return product != null ? Results.Ok(product) : Results.NotFound();
 })
     .WithName("UpdateProduct")
-    .AllowAnonymous();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Delete product (Admin only)
 app.MapDelete("/api/products/{id}", async (Guid id, ProductService productService) =>
@@ -219,7 +226,7 @@ app.MapDelete("/api/products/{id}", async (Guid id, ProductService productServic
     return success ? Results.NoContent() : Results.NotFound();
 })
     .WithName("DeleteProduct")
-    .RequireAuthorization();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Get featured products
 app.MapGet("/api/products/featured", async (ProductService productService, int limit = 10) =>
@@ -284,7 +291,7 @@ app.MapPost("/api/categories", async (CreateCategoryDto dto, IValidator<CreateCa
     return Results.Created($"/api/categories/{category.Id}", category);
 })
     .WithName("CreateCategory")
-    .AllowAnonymous();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Update category (Admin only)
 app.MapPut("/api/categories/{id}", async (Guid id, UpdateCategoryDto dto, IValidator<UpdateCategoryDto> validator, CategoryService categoryService) =>
@@ -302,7 +309,7 @@ app.MapPut("/api/categories/{id}", async (Guid id, UpdateCategoryDto dto, IValid
     return category != null ? Results.Ok(category) : Results.NotFound();
 })
     .WithName("UpdateCategory")
-    .AllowAnonymous();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Delete category (Admin only)
 app.MapDelete("/api/categories/{id}", async (Guid id, CategoryService categoryService) =>
@@ -311,7 +318,7 @@ app.MapDelete("/api/categories/{id}", async (Guid id, CategoryService categorySe
     return success ? Results.NoContent() : Results.BadRequest("Cannot delete category with products or subcategories");
 })
     .WithName("DeleteCategory")
-    .RequireAuthorization();
+    .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // ============ AUTH ENDPOINTS ============
 
@@ -510,8 +517,8 @@ app.MapPost("/api/addresses", async (HttpContext context, CreateAddressDto dto, 
     .WithName("CreateAddress")
     .RequireAuthorization();
 
-// Update address
-app.MapPut("/api/addresses/{id}", async (HttpContext context, Guid id, UpdateAddressDto dto, AddressService addressService) =>
+// Update address (full replacement - requires all fields)
+app.MapPut("/api/addresses/{id}", async (HttpContext context, Guid id, UpdateAddressDto dto, IValidator<UpdateAddressDto> validator, AddressService addressService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -519,10 +526,34 @@ app.MapPut("/api/addresses/{id}", async (HttpContext context, Guid id, UpdateAdd
         return Results.Unauthorized();
     }
 
+    var validationResult = await validator.ValidateAsync(dto);
+    if (!validationResult.IsValid)
+    {
+        var errors = validationResult.Errors
+            .GroupBy(e => e.PropertyName)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray());
+        return Results.ValidationProblem(errors);
+    }
+
     var address = await addressService.UpdateAddressAsync(userId, id, dto);
     return address != null ? Results.Ok(address) : Results.NotFound();
 })
     .WithName("UpdateAddress")
+    .RequireAuthorization();
+
+// Patch address (partial update - only updates provided fields)
+app.MapPatch("/api/addresses/{id}", async (HttpContext context, Guid id, PatchAddressDto dto, AddressService addressService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var address = await addressService.PatchAddressAsync(userId, id, dto);
+    return address != null ? Results.Ok(address) : Results.NotFound();
+})
+    .WithName("PatchAddress")
     .RequireAuthorization();
 
 // Delete address
