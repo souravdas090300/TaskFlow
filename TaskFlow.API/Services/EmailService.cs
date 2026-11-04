@@ -2,14 +2,11 @@ namespace TaskFlow.API.Services;
 
 public class EmailService
 {
-    private readonly IConfiguration _configuration;
-
-    public EmailService(IConfiguration configuration)
+    public EmailService()
     {
-        _configuration = configuration;
     }
 
-    public async Task SendOrderConfirmationEmailAsync(string toEmail, string customerName, string orderNumber, decimal total, string orderDate)
+    public static async Task SendOrderConfirmationEmailAsync(string toEmail, string customerName, string orderNumber, decimal total, string orderDate)
     {
         // TODO: Implement actual email sending with Resend or other provider
         Console.WriteLine($"[EMAIL MOCK] Order Confirmation sent to {toEmail}");
@@ -20,7 +17,7 @@ public class EmailService
         await Task.CompletedTask;
     }
 
-    public async Task SendShippedNotificationEmailAsync(string toEmail, string customerName, string orderNumber, string trackingNumber)
+    public static async Task SendShippedNotificationEmailAsync(string toEmail, string customerName, string orderNumber, string trackingNumber)
     {
         // TODO: Implement actual email sending with Resend or other provider
         Console.WriteLine($"[EMAIL MOCK] Shipped notification sent to {toEmail}");
@@ -30,7 +27,7 @@ public class EmailService
         await Task.CompletedTask;
     }
 
-    public async Task SendLowStockAlertEmailAsync(string adminEmail, string productName, int currentStock, int threshold)
+    public static async Task SendLowStockAlertEmailAsync(string adminEmail, string productName, int currentStock, int threshold)
     {
         // TODO: Implement actual email sending with Resend or other provider
         Console.WriteLine($"[EMAIL MOCK] Low stock alert sent to {adminEmail}");

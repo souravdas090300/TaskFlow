@@ -41,6 +41,7 @@ export const useAuthStore = create<AuthState>()(
           const token = authApi.getToken();
           set({ user, token: token || null, isAuthenticated: !!token });
         } catch (error) {
+          // User not authenticated or token expired - clear state
           set({ user: null, token: null, isAuthenticated: false });
         }
       },

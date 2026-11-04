@@ -102,7 +102,8 @@ public class AddressService
         _context.Addresses.Add(address);
         await _context.SaveChangesAsync();
 
-        return await GetAddressByIdAsync(userId, address.Id);
+        var result = await GetAddressByIdAsync(userId, address.Id);
+        return result ?? throw new InvalidOperationException("Failed to retrieve created address");
     }
 
     public async Task<AddressDto?> UpdateAddressAsync(Guid userId, Guid addressId, UpdateAddressDto dto)

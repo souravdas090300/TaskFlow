@@ -21,9 +21,10 @@ export const Checkout = () => {
         shippingAddressId: selectedAddress,
         paymentMethod,
       });
-      clearCart();
-      navigate(`/orders/${order.id}`);
+      void clearCart();
+      void navigate(`/orders/${order.id}`);
     } catch (error) {
+      // Alert user of checkout failure
       alert('Checkout failed');
     }
   };

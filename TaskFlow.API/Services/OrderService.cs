@@ -8,12 +8,12 @@ namespace TaskFlow.API.Services;
 public class OrderService
 {
     private readonly ApplicationDbContext _context;
-    private readonly EmailService _emailService;
+    private readonly IConfiguration _configuration;
 
-    public OrderService(ApplicationDbContext context, EmailService emailService)
+    public OrderService(ApplicationDbContext context, IConfiguration configuration)
     {
         _context = context;
-        _emailService = emailService;
+        _configuration = configuration;
     }
 
     public async Task<CheckoutDto?> GetCheckoutSummaryAsync(Guid userId)
@@ -47,8 +47,11 @@ public class OrderService
             .ToListAsync();
 
         var subtotal = cart.Items.Sum(i => i.UnitPrice * i.Quantity);
-        var tax = subtotal * 0.18m; // 18% VAT
-        var shipping = subtotal >= 50 ? 0 : 5.99m; // Free shipping over 50
+        var taxRate = _configuration.GetValue<decimal>("OrderSettings:TaxRate");
+        var tax = subtotal * taxRate;
+        var freeShippingThreshold = _configuration.GetValue<decimal>("OrderSettings:FreeShippingThreshold");
+        var shippingCost = _configuration.GetValue<decimal>("OrderSettings:ShippingCost");
+        var shipping = subtotal >= freeShippingThreshold ? 0 : shippingCost;
         var total = subtotal + tax + shipping;
 
         return new CheckoutDto
@@ -89,7 +92,8 @@ public class OrderService
 
         // Calculate totals server-side
         var subtotal = cart.Items.Sum(i => i.UnitPrice * i.Quantity);
-        var tax = subtotal * 0.18m; // 18% VAT
+        var taxRate = _configuration.GetValue<decimal>("OrderSettings:TaxRate");
+        var tax = subtotal * taxRate;
         var shipping = subtotal >= 50 ? 0 : 5.99m;
         var total = subtotal + tax + shipping;
 
@@ -136,7 +140,7 @@ public class OrderService
         var user = await _context.Users.FindAsync(userId);
         if (user != null)
         {
-            await _emailService.SendOrderConfirmationEmailAsync(
+            await EmailService.SendOrderConfirmationEmailAsync(
                 user.Email,
                 $"{user.FirstName} {user.LastName}",
                 orderNumber,
@@ -249,12 +253,20 @@ public class OrderService
     public async Task<bool> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
     {
         var order = await _context.Orders.FindAsync(orderId);
-        if (order == null || order.Status != "Pending")
+        if (order == null)
             return false;
 
-        // Idempotency check - only process if not already paid
-        if (order.Status == "Paid" && order.StripePaymentIntentId == paymentIntentId)
-            return true;
+        // Idempotency check - only process if not already paid with this event
+        if (order.Status == "Paid" && order.StripeEventId == eventId)
+            return true; // Already processed this event
+
+        // Cannot process if already paid with different payment intent
+        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
+            return false;
+
+        // Cannot process if order is cancelled, shipped, or delivered
+        if (order.Status == "Cancelled" || order.Status == "Shipped" || order.Status == "Delivered")
+            return false;
 
         order.StripePaymentIntentId = paymentIntentId;
         order.StripeEventId = eventId;
@@ -292,7 +304,7 @@ public class OrderService
         var user = await _context.Users.FindAsync(order.UserId);
         if (user != null)
         {
-            await _emailService.SendOrderConfirmationEmailAsync(
+            await EmailService.SendOrderConfirmationEmailAsync(
                 user.Email,
                 $"{user.FirstName} {user.LastName}",
                 order.OrderNumber,
@@ -344,7 +356,7 @@ public class OrderService
         var user = await _context.Users.FindAsync(order.UserId);
         if (user != null)
         {
-            await _emailService.SendOrderConfirmationEmailAsync(
+            await EmailService.SendOrderConfirmationEmailAsync(
                 user.Email,
                 $"{user.FirstName} {user.LastName}",
                 order.OrderNumber,
@@ -503,7 +515,7 @@ public class OrderService
             var user = await _context.Users.FindAsync(order.UserId);
             if (user != null)
             {
-                await _emailService.SendShippedNotificationEmailAsync(
+                await EmailService.SendShippedNotificationEmailAsync(
                     user.Email,
                     $"{user.FirstName} {user.LastName}",
                     order.OrderNumber,
@@ -530,7 +542,7 @@ public class OrderService
             var user = await _context.Users.FindAsync(order.UserId);
             if (user != null)
             {
-                await _emailService.SendShippedNotificationEmailAsync(
+                await EmailService.SendShippedNotificationEmailAsync(
                     user.Email,
                     $"{user.FirstName} {user.LastName}",
                     order.OrderNumber,

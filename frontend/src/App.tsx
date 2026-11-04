@@ -23,7 +23,7 @@ function App() {
   const loadUser = useAuthStore((state) => state.loadUser);
 
   useEffect(() => {
-    loadUser();
+    void loadUser();
   }, [loadUser]);
 
   return (

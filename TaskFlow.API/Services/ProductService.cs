@@ -94,7 +94,7 @@ public class ProductService
             .Include(p => p.Variants.Where(v => v.IsActive))
             .FirstOrDefaultAsync(p => p.Id == id);
 
-        if (product == null) return null;
+        if (product == null) throw new KeyNotFoundException("Product not found");
 
         return new ProductDto
         {
@@ -145,7 +145,7 @@ public class ProductService
             .Include(p => p.Variants.Where(v => v.IsActive))
             .FirstOrDefaultAsync(p => p.Slug == slug);
 
-        if (product == null) return null;
+        if (product == null) throw new KeyNotFoundException("Product not found");
 
         return new ProductDto
         {
@@ -246,7 +246,8 @@ public class ProductService
 
         await _context.SaveChangesAsync();
 
-        return await GetProductByIdAsync(product.Id);
+        var result = await GetProductByIdAsync(product.Id);
+        return result ?? throw new InvalidOperationException("Failed to retrieve created product");
     }
 
     public async Task<ProductDto?> UpdateProductAsync(Guid id, UpdateProductDto dto)
@@ -256,7 +257,7 @@ public class ProductService
             .Include(p => p.Variants)
             .FirstOrDefaultAsync(p => p.Id == id);
 
-        if (product == null) return null;
+        if (product == null) throw new KeyNotFoundException("Product not found");
 
         product.Name = dto.Name;
         product.Description = dto.Description;
@@ -324,7 +325,8 @@ public class ProductService
 
         await _context.SaveChangesAsync();
 
-        return await GetProductByIdAsync(product.Id);
+        var result = await GetProductByIdAsync(product.Id);
+        return result ?? throw new InvalidOperationException("Failed to retrieve created product");
     }
 
     public async Task<bool> DeleteProductAsync(Guid id)

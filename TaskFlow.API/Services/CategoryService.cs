@@ -44,7 +44,7 @@ public class CategoryService
             .Include(c => c.Products.Where(p => p.IsActive))
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        if (category == null) return null;
+        if (category == null) throw new KeyNotFoundException("Category not found");
 
         return new CategoryDto
         {
@@ -82,7 +82,7 @@ public class CategoryService
             .Include(c => c.Products.Where(p => p.IsActive))
             .FirstOrDefaultAsync(c => c.Slug == slug);
 
-        if (category == null) return null;
+        if (category == null) throw new KeyNotFoundException("Category not found");
 
         return new CategoryDto
         {
@@ -129,13 +129,14 @@ public class CategoryService
         _context.Categories.Add(category);
         await _context.SaveChangesAsync();
 
-        return await GetCategoryByIdAsync(category.Id);
+        var result = await GetCategoryByIdAsync(category.Id);
+        return result ?? throw new InvalidOperationException("Failed to retrieve created category");
     }
 
     public async Task<CategoryDto?> UpdateCategoryAsync(Guid id, UpdateCategoryDto dto)
     {
         var category = await _context.Categories.FindAsync(id);
-        if (category == null) return null;
+        if (category == null) throw new KeyNotFoundException("Category not found");
 
         category.Name = dto.Name;
         category.Slug = dto.Slug;
@@ -147,7 +148,8 @@ public class CategoryService
 
         await _context.SaveChangesAsync();
 
-        return await GetCategoryByIdAsync(category.Id);
+        var result = await GetCategoryByIdAsync(category.Id);
+        return result ?? throw new InvalidOperationException("Failed to retrieve created category");
     }
 
     public async Task<bool> DeleteCategoryAsync(Guid id)

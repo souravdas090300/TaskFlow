@@ -40,7 +40,6 @@ builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<StripeService>();
-builder.Services.AddScoped<EmailService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
@@ -65,6 +64,21 @@ if (string.IsNullOrEmpty(jwtKey))
     else
     {
         throw new InvalidOperationException("JWT Key must be configured in production environment");
+    }
+}
+
+// Validate Stripe configuration in production
+var stripeSecretKey = builder.Configuration["Stripe:SecretKey"];
+var stripeWebhookSecret = builder.Configuration["Stripe:WebhookSecret"];
+if (!builder.Environment.IsDevelopment())
+{
+    if (string.IsNullOrEmpty(stripeSecretKey))
+    {
+        throw new InvalidOperationException("Stripe:SecretKey must be configured in production environment");
+    }
+    if (string.IsNullOrEmpty(stripeWebhookSecret))
+    {
+        throw new InvalidOperationException("Stripe:WebhookSecret must be configured in production environment");
     }
 }
 
@@ -772,16 +786,41 @@ app.MapPost("/api/stripe/webhook", async (HttpRequest request, StripeService str
     var jsonPayload = await reader.ReadToEndAsync();
     var sigHeader = request.Headers["Stripe-Signature"];
 
-    if (!stripeService.VerifyWebhookSignature(jsonPayload, sigHeader))
+    // Validate signature header exists
+    if (string.IsNullOrEmpty(sigHeader))
     {
+        Console.WriteLine("Webhook rejected: Missing Stripe-Signature header");
         return Results.StatusCode(400);
     }
 
-    var (paymentIntentId, orderId) = stripeService.GetPaymentDetailsFromEvent(jsonPayload, sigHeader);
+    // Verify signature
+    if (!stripeService.VerifyWebhookSignature(jsonPayload, sigHeader!))
+    {
+        Console.WriteLine("Webhook rejected: Invalid signature");
+        return Results.StatusCode(400);
+    }
+
+    // Extract payment details
+    var (paymentIntentId, orderId) = stripeService.GetPaymentDetailsFromEvent(jsonPayload, sigHeader!);
     if (paymentIntentId != null && orderId.HasValue)
     {
-        var eventId = Guid.NewGuid().ToString(); // In production, use the actual event ID
-        await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, eventId);
+        // Extract actual Stripe event ID for idempotency
+        try
+        {
+            var stripeEvent = Stripe.EventUtility.ConstructEvent(
+                jsonPayload,
+                sigHeader,
+                builder.Configuration["Stripe:WebhookSecret"] ?? "",
+                300
+            );
+            
+            await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, stripeEvent.Id);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"Webhook processing error: {e.Message}");
+            return Results.StatusCode(500);
+        }
     }
 
     return Results.Ok();
