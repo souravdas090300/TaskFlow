@@ -6,6 +6,7 @@ Complete documentation for the TaskFlow e-commerce solution.
 
 - [Getting Started](GETTING_STARTED.md) - Quick start guide for local development
 - [Environment Setup](ENVIRONMENT_SETUP.md) - Environment variable configuration
+- [CI/CD Setup](CI_CD_SETUP.md) - GitHub Actions automated deployment
 - [Production Deployment](PRODUCTION_DEPLOYMENT.md) - VPS deployment with Nginx Proxy Manager
 - [Google Authentication](GOOGLE_AUTH_SETUP.md) - OAuth integration guide
 - [Database Setup](DATABASE_SETUP.md) - PostgreSQL and EF Core configuration
@@ -34,7 +35,15 @@ Complete documentation for the TaskFlow e-commerce solution.
 
 ### Deployment
 
-2. **[Production Deployment](PRODUCTION_DEPLOYMENT.md)**
+4. **[CI/CD Setup](CI_CD_SETUP.md)**
+   - GitHub Actions workflow configuration
+   - VPS setup and SSH key generation
+   - GitHub secrets configuration
+   - Nginx Proxy Manager setup
+   - Automated deployment triggers
+   - Troubleshooting and rollback
+
+5. **[Production Deployment](PRODUCTION_DEPLOYMENT.md)**
    - Architecture overview
    - Prerequisites
    - Step-by-step deployment to VPS
