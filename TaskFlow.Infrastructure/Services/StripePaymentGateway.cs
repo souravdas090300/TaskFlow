@@ -1,13 +1,18 @@
+using Microsoft.Extensions.Configuration;
 using Stripe;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Services;
 
-namespace TaskFlow.API.Services;
+namespace TaskFlow.Infrastructure.Services;
 
-public class StripeService
+/// <summary>
+/// Stripe payment gateway implementation using official Stripe.net SDK.
+/// </summary>
+public class StripePaymentGateway : IPaymentGateway
 {
     private readonly string _webhookSecret;
 
-    public StripeService(IConfiguration configuration)
+    public StripePaymentGateway(IConfiguration configuration)
     {
         var secretKey = configuration["Stripe:SecretKey"] ?? throw new InvalidOperationException("Stripe:SecretKey must be configured");
         _webhookSecret = configuration["Stripe:WebhookSecret"] ?? throw new InvalidOperationException("Stripe:WebhookSecret must be configured");
@@ -17,7 +22,7 @@ public class StripeService
 
     public async Task<CheckoutSessionResponse?> CreateCheckoutSessionAsync(Guid orderId, decimal amount, string successUrl, string cancelUrl, string? orderNumber = null)
     {
-        // NOTE: Full Stripe.net checkout session creation requires Stripe.net SessionService
+        // NOTE: Full Stripe.net checkout session creation requires SessionService
         // Current implementation uses mock to allow build. Production requires:
         // - SessionService.CreateAsync with SessionCreateOptions
         // - Proper metadata binding (OrderId)

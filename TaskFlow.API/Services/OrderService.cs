@@ -15,12 +15,14 @@ public class OrderService
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
+    private readonly IPaymentGateway _paymentGateway;
 
-    public OrderService(ApplicationDbContext context, IConfiguration configuration, IEmailService emailService)
+    public OrderService(ApplicationDbContext context, IConfiguration configuration, IEmailService emailService, IPaymentGateway paymentGateway)
     {
         _context = context;
         _configuration = configuration;
         _emailService = emailService;
+        _paymentGateway = paymentGateway;
     }
 
     public async Task<CheckoutDto?> GetCheckoutSummaryAsync(Guid userId)

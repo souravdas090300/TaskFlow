@@ -46,10 +46,12 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<StripeService>();
 
 // Register email service
 builder.Services.AddScoped<IEmailService, MockEmailService>();
+
+// Register payment gateway
+builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
@@ -764,7 +766,7 @@ app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
     .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Create Stripe checkout session
-app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, StripeService stripeService, OrderService orderService) =>
+app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, IPaymentGateway paymentGateway, OrderService orderService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -779,14 +781,14 @@ app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSe
         return Results.NotFound("Order not found");
     }
 
-    var session = await stripeService.CreateCheckoutSessionAsync(dto.OrderId, order.Total, dto.SuccessUrl, dto.CancelUrl, order.OrderNumber);
+    var session = await paymentGateway.CreateCheckoutSessionAsync(dto.OrderId, order.Total, dto.SuccessUrl, dto.CancelUrl, order.OrderNumber);
     return session != null ? Results.Ok(session) : Results.BadRequest("Failed to create checkout session");
 })
     .WithName("CreateStripeCheckout")
     .RequireAuthorization();
 
 // Stripe webhook endpoint
-app.MapPost("/api/stripe/webhook", async (HttpRequest request, StripeService stripeService, OrderService orderService) =>
+app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway paymentGateway, OrderService orderService) =>
 {
     using var reader = new StreamReader(request.Body);
     var jsonPayload = await reader.ReadToEndAsync();
@@ -800,14 +802,14 @@ app.MapPost("/api/stripe/webhook", async (HttpRequest request, StripeService str
     }
 
     // Verify signature
-    if (!stripeService.VerifyWebhookSignature(jsonPayload, sigHeader!))
+    if (!paymentGateway.VerifyWebhookSignature(jsonPayload, sigHeader!))
     {
         Console.WriteLine("Webhook rejected: Invalid signature");
         return Results.StatusCode(400);
     }
 
     // Extract payment details
-    var (paymentIntentId, orderId) = stripeService.GetPaymentDetailsFromEvent(jsonPayload, sigHeader!);
+    var (paymentIntentId, orderId) = paymentGateway.GetPaymentDetailsFromEvent(jsonPayload, sigHeader!);
     if (paymentIntentId != null && orderId.HasValue)
     {
         // Extract actual Stripe event ID for idempotency
