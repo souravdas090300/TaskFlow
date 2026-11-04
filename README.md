@@ -26,6 +26,7 @@ Comprehensive documentation is available in the [docs/](docs/) folder:
 
 - [Getting Started](docs/GETTING_STARTED.md) - Quick start guide
 - [Environment Setup](docs/ENVIRONMENT_SETUP.md) - Environment variable configuration
+- [CI/CD Setup](docs/CI_CD_SETUP.md) - GitHub Actions automated deployment
 - [Database Setup](docs/DATABASE_SETUP.md) - PostgreSQL and EF Core configuration
 - [Google Authentication](docs/GOOGLE_AUTH_SETUP.md) - OAuth integration guide
 - [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md) - VPS deployment with Nginx Proxy Manager
