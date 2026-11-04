@@ -7,6 +7,9 @@ namespace TaskFlow.API.Services;
 
 public class OrderService
 {
+    private const string DateFormat = "MMMM dd, yyyy";
+    private const string ShippedStatus = "Shipped";
+    
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
 
@@ -145,7 +148,7 @@ public class OrderService
                 $"{user.FirstName} {user.LastName}",
                 orderNumber,
                 total,
-                DateTime.UtcNow.ToString("MMMM dd, yyyy")
+                DateTime.UtcNow.ToString(DateFormat)
             );
         }
 
@@ -309,7 +312,7 @@ public class OrderService
                 $"{user.FirstName} {user.LastName}",
                 order.OrderNumber,
                 order.Total,
-                order.PaidAt?.ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.ToString("MMMM dd, yyyy")
+                order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
             );
         }
 
@@ -361,7 +364,7 @@ public class OrderService
                 $"{user.FirstName} {user.LastName}",
                 order.OrderNumber,
                 order.Total,
-                order.PaidAt?.ToString("MMMM dd, yyyy") ?? DateTime.UtcNow.ToString("MMMM dd, yyyy")
+                order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
             );
         }
 

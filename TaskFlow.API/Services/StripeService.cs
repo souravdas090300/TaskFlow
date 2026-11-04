@@ -6,14 +6,13 @@ namespace TaskFlow.API.Services;
 public class StripeService
 {
     private readonly string _webhookSecret;
-    private readonly string _secretKey;
 
     public StripeService(IConfiguration configuration)
     {
-        _secretKey = configuration["Stripe:SecretKey"] ?? throw new InvalidOperationException("Stripe:SecretKey must be configured");
+        var secretKey = configuration["Stripe:SecretKey"] ?? throw new InvalidOperationException("Stripe:SecretKey must be configured");
         _webhookSecret = configuration["Stripe:WebhookSecret"] ?? throw new InvalidOperationException("Stripe:WebhookSecret must be configured");
         
-        StripeConfiguration.ApiKey = _secretKey;
+        StripeConfiguration.ApiKey = secretKey;
     }
 
     public async Task<CheckoutSessionResponse?> CreateCheckoutSessionAsync(Guid orderId, decimal amount, string successUrl, string cancelUrl, string? orderNumber = null)
