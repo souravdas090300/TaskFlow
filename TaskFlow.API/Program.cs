@@ -11,8 +11,10 @@ using TaskFlow.API.Middleware;
 using TaskFlow.API.Services;
 using TaskFlow.API.Models;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Services;
 using TaskFlow.Application.Validators;
 using TaskFlow.Infrastructure;
+using TaskFlow.Infrastructure.Services;
 using FluentValidation;
 using AspNetCoreRateLimit;
 
@@ -45,6 +47,9 @@ builder.Services.AddScoped<CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
 builder.Services.AddScoped<StripeService>();
+
+// Register email service
+builder.Services.AddScoped<IEmailService, MockEmailService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();

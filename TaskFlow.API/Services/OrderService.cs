@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Services;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
 
@@ -13,11 +14,13 @@ public class OrderService
     
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly IEmailService _emailService;
 
-    public OrderService(ApplicationDbContext context, IConfiguration configuration)
+    public OrderService(ApplicationDbContext context, IConfiguration configuration, IEmailService emailService)
     {
         _context = context;
         _configuration = configuration;
+        _emailService = emailService;
     }
 
     public async Task<CheckoutDto?> GetCheckoutSummaryAsync(Guid userId)
@@ -146,7 +149,7 @@ public class OrderService
         var user = await _context.Users.FindAsync(userId);
         if (user != null)
         {
-            await EmailService.SendOrderConfirmationEmailAsync(
+            await _emailService.SendOrderConfirmationEmailAsync(
                 user.Email,
                 $"{user.FirstName} {user.LastName}",
                 orderNumber,
@@ -326,7 +329,7 @@ public class OrderService
             {
                 try
                 {
-                    await EmailService.SendOrderConfirmationEmailAsync(
+                    await _emailService.SendOrderConfirmationEmailAsync(
                         user.Email,
                         $"{user.FirstName} {user.LastName}",
                         order.OrderNumber,
@@ -426,7 +429,7 @@ public class OrderService
             {
                 try
                 {
-                    await EmailService.SendOrderConfirmationEmailAsync(
+                    await _emailService.SendOrderConfirmationEmailAsync(
                         user.Email,
                         $"{user.FirstName} {user.LastName}",
                         order.OrderNumber,
@@ -596,7 +599,7 @@ public class OrderService
             var user = await _context.Users.FindAsync(order.UserId);
             if (user != null)
             {
-                await EmailService.SendShippedNotificationEmailAsync(
+                await _emailService.SendShippedNotificationEmailAsync(
                     user.Email,
                     $"{user.FirstName} {user.LastName}",
                     order.OrderNumber,
@@ -623,7 +626,7 @@ public class OrderService
             var user = await _context.Users.FindAsync(order.UserId);
             if (user != null)
             {
-                await EmailService.SendShippedNotificationEmailAsync(
+                await _emailService.SendShippedNotificationEmailAsync(
                     user.Email,
                     $"{user.FirstName} {user.LastName}",
                     order.OrderNumber,
