@@ -258,85 +258,106 @@ public class OrderService
 
     public async Task<bool> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
     {
-        var order = await _context.Orders.FindAsync(orderId);
-        if (order == null)
-            return false;
-
-        // Cannot process if already paid with different payment intent
-        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
-            return false;
-
-        // Cannot process if order is cancelled, shipped, or delivered
-        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
-            return false;
-
-        // Insert processed event record BEFORE updating order - this provides transactional idempotency
-        // If the same event ID is delivered twice, the unique constraint will fail and we catch DbUpdateException
-        _context.ProcessedWebhookEvents.Add(new ProcessedWebhookEvent
-        {
-            EventId = eventId,
-            ProcessedAt = DateTime.UtcNow
-        });
-
-        order.StripePaymentIntentId = paymentIntentId;
-        order.StripeEventId = eventId;
-        order.Status = "Paid";
-        order.PaidAt = DateTime.UtcNow;
-
-        // Get order items for stock reduction
-        var orderItems = await _context.OrderItems
-            .Where(oi => oi.OrderId == orderId)
-            .ToListAsync();
-
-        // Atomic stock reduction - use SQL UPDATE to prevent overselling
-        // This ensures stock is only decremented if sufficient stock exists
-        foreach (var item in orderItems)
-        {
-            var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
-                "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
-                item.Quantity, item.ProductId);
-
-            if (rowsAffected == 0)
-            {
-                // Insufficient stock - rollback transaction and fail
-                throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
-            }
-        }
-
-        // Clear user's cart
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == order.UserId);
-        if (cart != null)
-        {
-            _context.CartItems.RemoveRange(cart.Items);
-        }
+        await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
+            var order = await _context.Orders.FindAsync(orderId);
+            if (order == null)
+                return false;
+
+            // Cannot process if already paid with different payment intent
+            if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
+                return false;
+
+            // Cannot process if order is cancelled, shipped, or delivered
+            if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
+                return false;
+
+            // Insert processed event record BEFORE updating order - this provides transactional idempotency
+            // If the same event ID is delivered twice, the unique constraint will fail and we catch DbUpdateException
+            _context.ProcessedWebhookEvents.Add(new ProcessedWebhookEvent
+            {
+                EventId = eventId,
+                ProcessedAt = DateTime.UtcNow
+            });
+
+            order.StripePaymentIntentId = paymentIntentId;
+            order.StripeEventId = eventId;
+            order.Status = "Paid";
+            order.PaidAt = DateTime.UtcNow;
+
+            // Get order items for stock reduction
+            var orderItems = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId)
+                .ToListAsync();
+
+            // Atomic stock reduction - use SQL UPDATE to prevent overselling
+            // This ensures stock is only decremented if sufficient stock exists
+            foreach (var item in orderItems)
+            {
+                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
+                    "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
+                    item.Quantity, item.ProductId);
+
+                if (rowsAffected == 0)
+                {
+                    // Insufficient stock - rollback transaction and fail
+                    throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
+                }
+            }
+
+            // Clear user's cart
+            var cart = await _context.Carts
+                .Include(c => c.Items)
+                .FirstOrDefaultAsync(c => c.UserId == order.UserId);
+            if (cart != null)
+            {
+                _context.CartItems.RemoveRange(cart.Items);
+            }
+
             await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Send order confirmation email (after successful transaction)
+            // Wrapped in try/catch to prevent webhook retry on email failure
+            var user = await _context.Users.FindAsync(order.UserId);
+            if (user != null)
+            {
+                try
+                {
+                    await EmailService.SendOrderConfirmationEmailAsync(
+                        user.Email,
+                        $"{user.FirstName} {user.LastName}",
+                        order.OrderNumber,
+                        order.Total,
+                        order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
+                    );
+                }
+                catch (Exception ex)
+                {
+                    // Log email failure but don't fail the webhook
+                    // Order is already paid and committed
+                    Console.WriteLine($"Failed to send order confirmation email for {order.OrderNumber}: {ex.Message}");
+                    // TODO: Add background retry queue or admin resend action
+                }
+            }
+
+            return true;
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (IsDuplicateKeyException(ex))
         {
             // Duplicate key violation means this event was already processed
-            // Return true to indicate success (idempotent)
+            // Rollback transaction and return true to indicate success (idempotent)
+            await transaction.RollbackAsync();
             return true;
         }
-
-        // Send order confirmation email (after successful transaction)
-        var user = await _context.Users.FindAsync(order.UserId);
-        if (user != null)
+        catch
         {
-            await EmailService.SendOrderConfirmationEmailAsync(
-                user.Email,
-                $"{user.FirstName} {user.LastName}",
-                order.OrderNumber,
-                order.Total,
-                order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
-            );
+            // Any other exception - rollback transaction
+            await transaction.RollbackAsync();
+            throw;
         }
-
-        return true;
     }
 
     private static bool IsDuplicateKeyException(Microsoft.EntityFrameworkCore.DbUpdateException ex)
@@ -356,54 +377,76 @@ public class OrderService
 
     public async Task<bool> ProcessCashOnDeliveryAsync(Guid orderId)
     {
-        var order = await _context.Orders.FindAsync(orderId);
-        if (order == null || order.Status != "Pending")
-            return false;
+        await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        order.Status = "Paid"; // Mark as paid for COD
-        order.PaidAt = DateTime.UtcNow;
-
-        // Reduce stock
-        var orderItems = await _context.OrderItems
-            .Where(oi => oi.OrderId == orderId)
-            .ToListAsync();
-
-        foreach (var item in orderItems)
+        try
         {
-            var product = await _context.Products.FindAsync(item.ProductId);
-            if (product != null)
+            var order = await _context.Orders.FindAsync(orderId);
+            if (order == null || order.Status != "Pending")
+                return false;
+
+            order.Status = "Paid"; // Mark as paid for COD
+            order.PaidAt = DateTime.UtcNow;
+
+            // Get order items for stock reduction
+            var orderItems = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId)
+                .ToListAsync();
+
+            // Atomic stock reduction - use SQL UPDATE to prevent overselling
+            foreach (var item in orderItems)
             {
-                product.Stock -= item.Quantity;
-                if (product.Stock < 0)
-                    product.Stock = 0;
+                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
+                    "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
+                    item.Quantity, item.ProductId);
+
+                if (rowsAffected == 0)
+                {
+                    // Insufficient stock - rollback transaction and fail
+                    throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
+                }
             }
-        }
 
-        // Clear cart
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == order.UserId);
-        if (cart != null)
+            // Clear cart
+            var cart = await _context.Carts
+                .Include(c => c.Items)
+                .FirstOrDefaultAsync(c => c.UserId == order.UserId);
+            if (cart != null)
+            {
+                _context.CartItems.RemoveRange(cart.Items);
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            // Send order confirmation email for COD orders
+            // Wrapped in try/catch to prevent failure on email issues
+            var user = await _context.Users.FindAsync(order.UserId);
+            if (user != null)
+            {
+                try
+                {
+                    await EmailService.SendOrderConfirmationEmailAsync(
+                        user.Email,
+                        $"{user.FirstName} {user.LastName}",
+                        order.OrderNumber,
+                        order.Total,
+                        order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to send COD order confirmation email for {order.OrderNumber}: {ex.Message}");
+                }
+            }
+
+            return true;
+        }
+        catch
         {
-            _context.CartItems.RemoveRange(cart.Items);
+            await transaction.RollbackAsync();
+            throw;
         }
-
-        await _context.SaveChangesAsync();
-
-        // Send order confirmation email for COD orders
-        var user = await _context.Users.FindAsync(order.UserId);
-        if (user != null)
-        {
-            await EmailService.SendOrderConfirmationEmailAsync(
-                user.Email,
-                $"{user.FirstName} {user.LastName}",
-                order.OrderNumber,
-                order.Total,
-                order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
-            );
-        }
-
-        return true;
     }
 
     public async Task<bool> CancelOrderAsync(Guid userId, Guid orderId)

@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
+using TaskFlow.API.Middleware;
 using TaskFlow.API.Services;
 using TaskFlow.API.Models;
 using TaskFlow.Application.DTOs;
@@ -126,6 +127,9 @@ using (var scope = app.Services.CreateScope())
 
 // Configure the HTTP request pipeline
 app.UseHttpsRedirection();
+
+// Global exception handling
+app.UseMiddleware<GlobalExceptionHandler>();
 
 // Authentication & Authorization
 app.UseAuthentication();
