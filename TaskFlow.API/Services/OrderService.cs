@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
@@ -11,18 +13,28 @@ public class OrderService
 {
     private const string DateFormat = "MMMM dd, yyyy";
     private const string ShippedStatus = "Shipped";
-    
+
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
-    private readonly IPaymentGateway _paymentGateway;
+    private readonly IOrderRepository _orderRepository;
+    private readonly IProcessedWebhookEventRepository _eventRepository;
+    private readonly ILogger<OrderService> _logger;
 
-    public OrderService(ApplicationDbContext context, IConfiguration configuration, IEmailService emailService, IPaymentGateway paymentGateway)
+    public OrderService(
+        ApplicationDbContext context,
+        IConfiguration configuration,
+        IEmailService emailService,
+        IOrderRepository orderRepository,
+        IProcessedWebhookEventRepository eventRepository,
+        ILogger<OrderService> logger)
     {
         _context = context;
         _configuration = configuration;
         _emailService = emailService;
-        _paymentGateway = paymentGateway;
+        _orderRepository = orderRepository;
+        _eventRepository = eventRepository;
+        _logger = logger;
     }
 
     public async Task<CheckoutDto?> GetCheckoutSummaryAsync(Guid userId)
@@ -263,55 +275,62 @@ public class OrderService
 
     public async Task<bool> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
     {
+        var order = await _context.Orders.FindAsync(orderId);
+        if (order == null)
+        {
+            _logger.LogError("Stripe event {EventId}: order {OrderId} not found", eventId, orderId);
+            return false;
+        }
+
+        // Cannot process if already paid with different payment intent
+        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
+            return false;
+
+        // Cannot process if order is cancelled, shipped, or delivered
+        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
+        {
+            _logger.LogError(
+                "Stripe event {EventId}: payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
+                eventId, paymentIntentId, order.OrderNumber, order.Status);
+            return false;
+        }
+
+        var paidAt = DateTime.UtcNow;
+
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        try
+        // 1. Idempotency: mark event processed
+        if (!await _eventRepository.TryMarkProcessedAsync(eventId))
+            return true; // Already processed
+
+        // 2. Atomic Pending -> Paid
+        if (!await _orderRepository.TryMarkPaidAsync(orderId, paymentIntentId, eventId, paidAt))
         {
-            var order = await _context.Orders.FindAsync(orderId);
-            if (order == null)
-                return false;
+            await transaction.CommitAsync(); // Keep the event record
+            return true; // Already paid by another event
+        }
 
-            // Cannot process if already paid with different payment intent
-            if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
-                return false;
+        // 3. Atomic stock decrement for every line
+        var orderItems = await _context.OrderItems
+            .Where(oi => oi.OrderId == orderId)
+            .ToListAsync();
 
-            // Cannot process if order is cancelled, shipped, or delivered
-            if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
-                return false;
+        var stockOk = true;
+        foreach (var item in orderItems.OrderBy(i => i.ProductId))
+        {
+            var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
+                item.Quantity, item.ProductId);
 
-            // Insert processed event record BEFORE updating order - this provides transactional idempotency
-            // If the same event ID is delivered twice, the unique constraint will fail and we catch DbUpdateException
-            _context.ProcessedWebhookEvents.Add(new ProcessedWebhookEvent
+            if (rowsAffected == 0)
             {
-                EventId = eventId,
-                ProcessedAt = DateTime.UtcNow
-            });
-
-            order.StripePaymentIntentId = paymentIntentId;
-            order.StripeEventId = eventId;
-            order.Status = "Paid";
-            order.PaidAt = DateTime.UtcNow;
-
-            // Get order items for stock reduction
-            var orderItems = await _context.OrderItems
-                .Where(oi => oi.OrderId == orderId)
-                .ToListAsync();
-
-            // Atomic stock reduction - use SQL UPDATE to prevent overselling
-            // This ensures stock is only decremented if sufficient stock exists
-            foreach (var item in orderItems)
-            {
-                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
-                    "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
-                    item.Quantity, item.ProductId);
-
-                if (rowsAffected == 0)
-                {
-                    // Insufficient stock - rollback transaction and fail
-                    throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
-                }
+                stockOk = false;
+                break;
             }
+        }
 
+        if (stockOk)
+        {
             // Clear user's cart
             var cart = await _context.Carts
                 .Include(c => c.Items)
@@ -336,33 +355,41 @@ public class OrderService
                         $"{user.FirstName} {user.LastName}",
                         order.OrderNumber,
                         order.Total,
-                        order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
+                        paidAt.ToString(DateFormat)
                     );
                 }
                 catch (Exception ex)
                 {
                     // Log email failure but don't fail the webhook
                     // Order is already paid and committed
-                    Console.WriteLine($"Failed to send order confirmation email for {order.OrderNumber}: {ex.Message}");
-                    // TODO: Add background retry queue or admin resend action
+                    _logger.LogError(ex, "Failed to send order confirmation email for {OrderNumber}", order.OrderNumber);
                 }
             }
 
             return true;
         }
-        catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (IsDuplicateKeyException(ex))
+
+        await transaction.RollbackAsync(); // Undoes Paid flag, event row, and any partial stock decrements
+
+        // Money was taken but we cannot fulfil. Record the event and flag the order for an admin.
+        await using var reviewTransaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            // Duplicate key violation means this event was already processed
-            // Rollback transaction and return true to indicate success (idempotent)
-            await transaction.RollbackAsync();
-            return true;
+            if (!await _eventRepository.TryMarkProcessedAsync(eventId))
+                return true; // Already processed
+            await _orderRepository.MarkPaymentReviewAsync(orderId, paymentIntentId);
+            await reviewTransaction.CommitAsync();
         }
         catch
         {
-            // Any other exception - rollback transaction
-            await transaction.RollbackAsync();
+            await reviewTransaction.RollbackAsync();
             throw;
         }
+
+        _logger.LogError(
+            "Order {OrderNumber} paid ({PaymentIntent}) but stock is insufficient. Flagged PaymentReview: refund or restock.",
+            order.OrderNumber, paymentIntentId);
+        return true; // Return 200 to Stripe so it doesn't retry
     }
 
     private static bool IsDuplicateKeyException(Microsoft.EntityFrameworkCore.DbUpdateException ex)

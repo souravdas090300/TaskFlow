@@ -17,5 +17,6 @@ public interface IOrderRepository
     Task DeleteAsync(Order order);
     Task<bool> ExistsByOrderNumberAsync(string orderNumber);
     Task<bool> TryMarkPaidAsync(Guid orderId, string paymentIntentId, DateTime paidAtUtc);
+    Task<bool> TryMarkPaidAsync(Guid orderId, string paymentIntentId, string eventId, DateTime paidAtUtc);
     Task MarkPaymentReviewAsync(Guid orderId, string paymentIntentId);
 }

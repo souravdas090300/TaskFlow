@@ -1,10 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Moq;
 using TaskFlow.API.Services;
+using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
+using TaskFlow.Infrastructure.Repositories;
 using Testcontainers.PostgreSql;
 
 namespace TaskFlow.UnitTests.Integration;
@@ -14,6 +17,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
     private readonly PostgreSqlContainer _postgresContainer;
     private ApplicationDbContext? _context;
     private OrderService _orderService = null!;
+    private readonly Mock<IEmailService> _mockEmailService = new();
 
     public PaymentIdempotencyTests()
     {
@@ -59,8 +63,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
             })
             .Build();
 
-        var mockEmailService = new Mock<IEmailService>();
-        mockEmailService.Setup(x => x.SendOrderConfirmationEmailAsync(
+        _mockEmailService.Setup(x => x.SendOrderConfirmationEmailAsync(
             It.IsAny<string>(),
             It.IsAny<string>(),
             It.IsAny<string>(),
@@ -68,9 +71,11 @@ public class PaymentIdempotencyTests : IAsyncLifetime
             It.IsAny<string>()))
             .Returns(Task.CompletedTask);
 
-        var mockPaymentGateway = new Mock<IPaymentGateway>();
+        var orderRepository = new OrderRepository(context);
+        var eventRepository = new ProcessedWebhookEventRepository(context);
+        var logger = new Moq.Mock<Microsoft.Extensions.Logging.ILogger<OrderService>>();
 
-        return new OrderService(context, configuration, mockEmailService.Object, mockPaymentGateway.Object);
+        return new OrderService(context, configuration, _mockEmailService.Object, orderRepository, eventRepository, logger.Object);
     }
 
     [Fact]
@@ -295,35 +300,36 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         var service1 = CreateOrderService(context1);
         var service2 = CreateOrderService(context2);
 
-        var task1 = service1.ProcessStripePaymentAsync(order1.Id, paymentIntentId1, eventId1);
-        var task2 = service2.ProcessStripePaymentAsync(order2.Id, paymentIntentId2, eventId2);
-
-        // One should succeed, one should fail due to insufficient stock
         var results = await Task.WhenAll(
-            task1.ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : false),
-            task2.ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : false)
+            service1.ProcessStripePaymentAsync(order1.Id, paymentIntentId1, eventId1),
+            service2.ProcessStripePaymentAsync(order2.Id, paymentIntentId2, eventId2)
         );
 
-        // Assert - Exactly one should succeed
-        var successCount = results.Count(r => r);
-        Assert.Equal(1, successCount);
+        // Assert - Both should return true (webhook 200) - one Paid, one PaymentReview
+        Assert.True(results[0]);
+        Assert.True(results[1]);
 
         // Verify stock is now 0
         _context.ChangeTracker.Clear();
         var stockProduct = await _context.Products.FindAsync(product.Id);
         Assert.Equal(0, stockProduct?.Stock);
 
-        // Verify exactly one order is Paid
+        // Verify exactly one order is Paid and one is PaymentReview
+        _context.ChangeTracker.Clear();
         var paidOrders = await _context.Orders
             .Where(o => o.Status == "Paid" && (o.Id == order1.Id || o.Id == order2.Id))
             .CountAsync();
+        var reviewOrders = await _context.Orders
+            .Where(o => o.Status == "PaymentReview" && (o.Id == order1.Id || o.Id == order2.Id))
+            .CountAsync();
         Assert.Equal(1, paidOrders);
+        Assert.Equal(1, reviewOrders);
     }
 
     [Fact]
-    public async Task ProcessStripePaymentAsync_StockRunsOut_FlagsPaymentReview()
+    public async Task ProcessStripePaymentAsync_StockRunsOut_SetsPaymentReview_Returns200()
     {
-        // Arrange - Create product with stock=0
+        // Arrange - Create two products: A with stock 5, B with stock 0
         var category = new Category
         {
             Id = Guid.NewGuid(),
@@ -335,19 +341,35 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         };
         _context!.Categories.Add(category);
 
-        var product = new Product
+        // Product A: GUID sorts first, has stock 5
+        var productA = new Product
         {
-            Id = Guid.NewGuid(),
-            Name = "Out of Stock Item",
+            Id = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            Name = "Product A",
             Description = "Test",
-            Price = 100.00m,
-            Stock = 0, // Out of stock
-            Slug = "out-of-stock",
+            Price = 50.00m,
+            Stock = 5,
+            Slug = "product-a",
             CategoryId = category.Id,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
-        _context.Products.Add(product);
+        _context.Products.Add(productA);
+
+        // Product B: GUID sorts second, has stock 0
+        var productB = new Product
+        {
+            Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            Name = "Product B",
+            Description = "Test",
+            Price = 50.00m,
+            Stock = 0, // Out of stock
+            Slug = "product-b",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(productB);
 
         var user = new User
         {
@@ -369,53 +391,122 @@ public class PaymentIdempotencyTests : IAsyncLifetime
             OrderNumber = "ORD-TEST-OUTOFSTOCK",
             Status = "Pending",
             PaymentMethod = "CreditCard",
-            Subtotal = 100.00m,
-            Tax = 10.00m,
+            Subtotal = 150.00m,
+            Tax = 15.00m,
             ShippingCost = 5.99m,
-            Total = 115.99m,
+            Total = 170.99m,
             CreatedAt = DateTime.UtcNow,
             ConcurrencyToken = Guid.NewGuid()
         };
         _context.Orders.Add(order);
 
-        var orderItem = new OrderItem
+        // Line 1: Product A, quantity 2 (will succeed)
+        var orderItemA = new OrderItem
         {
             Id = Guid.NewGuid(),
             OrderId = order.Id,
-            ProductId = product.Id,
-            ProductName = "Out of Stock Item",
-            Quantity = 1,
-            UnitPrice = 100.00m,
+            ProductId = productA.Id,
+            ProductName = "Product A",
+            Quantity = 2,
+            UnitPrice = 50.00m,
             TotalPrice = 100.00m
         };
-        _context.OrderItems.Add(orderItem);
+        _context.OrderItems.Add(orderItemA);
+
+        // Line 2: Product B, quantity 1 (will fail)
+        var orderItemB = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            ProductId = productB.Id,
+            ProductName = "Product B",
+            Quantity = 1,
+            UnitPrice = 50.00m,
+            TotalPrice = 50.00m
+        };
+        _context.OrderItems.Add(orderItemB);
+
+        // Add cart items to verify they remain intact
+        var cart = new Cart
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Carts.Add(cart);
+
+        var cartItemA = new CartItem
+        {
+            Id = Guid.NewGuid(),
+            CartId = cart.Id,
+            ProductId = productA.Id,
+            Quantity = 1
+        };
+        _context.CartItems.Add(cartItemA);
+
+        var cartItemB = new CartItem
+        {
+            Id = Guid.NewGuid(),
+            CartId = cart.Id,
+            ProductId = productB.Id,
+            Quantity = 1
+        };
+        _context.CartItems.Add(cartItemB);
 
         await _context.SaveChangesAsync();
 
         const string eventId = "evt_test_outofstock";
         const string paymentIntentId = "pi_test_outofstock";
 
-        // Act - Payment arrives but stock is gone
-        // Current implementation throws exception (MONEY BUG - must fix before deployment)
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await _orderService!.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId));
+        // Track email calls
+        var emailCalls = 0;
+        _mockEmailService.Setup(x => x.SendOrderConfirmationEmailAsync(
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<string>(),
+            It.IsAny<decimal>(),
+            It.IsAny<string>()))
+            .Callback(() => emailCalls++)
+            .Returns(Task.CompletedTask);
 
-        // Verify order status is still Pending (not Paid, not cancelled)
+        // Act - Payment arrives but stock is out on line 2
+        var result = await _orderService!.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+
+        // Assert - Webhook returns 200 (true means success, stripe doesn't retry)
+        Assert.True(result);
+
+        // Verify order status is PaymentReview (not Paid, not Pending)
         _context.ChangeTracker.Clear();
         var orderStatus = await _context.Orders.FindAsync(order.Id);
-        Assert.Equal("Pending", orderStatus?.Status);
+        Assert.Equal("PaymentReview", orderStatus?.Status);
 
-        // Stock should still be 0 (not decremented)
-        var stockProduct = await _context.Products.FindAsync(product.Id);
-        Assert.Equal(0, stockProduct?.Stock);
+        // Verify PaidAt is null (order was never committed as Paid)
+        Assert.Null(orderStatus?.PaidAt);
 
-        // MONEY BUG - PaymentReview pattern must be implemented before deployment
-        // When payment succeeds but stock is out:
-        // 1. Rollback transaction (undoes Paid flag, event row, partial stock changes)
-        // 2. In separate transaction: mark event processed, set order to PaymentReview
-        // 3. Return 200 to Stripe (not exception) to prevent retries
-        // 4. Order status PaymentReview flags it for admin refund/restock
-        // Current behavior: throws exception, order stays Pending, Stripe retries for 3 days
-        // Reference implementation in attached CheckoutService.cs shows correct pattern
+        // Verify payment intent ID is stored
+        Assert.Equal(paymentIntentId, orderStatus?.StripePaymentIntentId);
+
+        // Product A stock should still be 5 (rollback restored it)
+        var stockA = await _context.Products.FindAsync(productA.Id);
+        Assert.Equal(5, stockA?.Stock);
+
+        // Product B stock should still be 0
+        var stockB = await _context.Products.FindAsync(productB.Id);
+        Assert.Equal(0, stockB?.Stock);
+
+        // Verify cart items are still there (not cleared)
+        var cartItems = await _context.CartItems
+            .Where(ci => ci.CartId == cart.Id)
+            .CountAsync();
+        Assert.Equal(2, cartItems);
+
+        // Verify exactly one event row exists
+        var eventCount = await _context.ProcessedWebhookEvents
+            .Where(e => e.EventId == eventId)
+            .CountAsync();
+        Assert.Equal(1, eventCount);
+
+        // Verify no email was sent
+        Assert.Equal(0, emailCalls);
     }
 }
