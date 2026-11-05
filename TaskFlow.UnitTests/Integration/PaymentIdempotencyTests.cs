@@ -396,7 +396,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         const string paymentIntentId = "pi_test_outofstock";
 
         // Act - Payment arrives but stock is gone
-        // Current implementation throws exception (documenting this behavior)
+        // Current implementation throws exception (MONEY BUG - must fix before deployment)
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             await _orderService!.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId));
 
@@ -409,10 +409,12 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         var stockProduct = await _context.Products.FindAsync(product.Id);
         Assert.Equal(0, stockProduct?.Stock);
 
-        // TODO: Future refactoring should implement PaymentReview status per reference implementation
-        // - Rollback transaction
-        // - Keep event record
-        // - Flag order as PaymentReview
-        // - Return 200 to Stripe (not exception)
+        // TODO: MONEY BUG - Implement PaymentReview pattern before deployment
+        // When payment succeeds but stock is out:
+        // 1. Rollback transaction (undoes Paid flag, event row, partial stock changes)
+        // 2. In separate transaction: mark event processed, set order to PaymentReview
+        // 3. Return 200 to Stripe (not exception) to prevent retries
+        // 4. Order status PaymentReview flags it for admin refund/restock
+        // Current behavior: throws exception, order stays Pending, Stripe retries for 3 days
     }
 }
