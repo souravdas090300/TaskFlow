@@ -409,12 +409,13 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         var stockProduct = await _context.Products.FindAsync(product.Id);
         Assert.Equal(0, stockProduct?.Stock);
 
-        // TODO: MONEY BUG - Implement PaymentReview pattern before deployment
+        // MONEY BUG - PaymentReview pattern must be implemented before deployment
         // When payment succeeds but stock is out:
         // 1. Rollback transaction (undoes Paid flag, event row, partial stock changes)
         // 2. In separate transaction: mark event processed, set order to PaymentReview
         // 3. Return 200 to Stripe (not exception) to prevent retries
         // 4. Order status PaymentReview flags it for admin refund/restock
         // Current behavior: throws exception, order stays Pending, Stripe retries for 3 days
+        // Reference implementation in attached CheckoutService.cs shows correct pattern
     }
 }
