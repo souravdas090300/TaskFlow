@@ -470,7 +470,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
             .Returns(Task.CompletedTask);
 
         // Act - Payment arrives but stock is out on line 2
-        var result = await _orderService!.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+        var result = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
 
         // Assert - Webhook returns 200 (true means success, stripe doesn't retry)
         Assert.True(result);
@@ -508,5 +508,336 @@ public class PaymentIdempotencyTests : IAsyncLifetime
 
         // Verify no email was sent
         Assert.Equal(0, emailCalls);
+    }
+
+    [Fact]
+    public async Task ProcessStripePaymentAsync_ConcurrentDuplicateEvent_Idempotent()
+    {
+        // Arrange - Create test data
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Category",
+            Slug = "test-category",
+            DisplayOrder = 0,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context!.Categories.Add(category);
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Product",
+            Description = "Test",
+            Price = 100.00m,
+            Stock = 10,
+            Slug = "test-product",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(product);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "test@example.com",
+            PasswordHash = "hash",
+            FirstName = "Test",
+            LastName = "User",
+            Name = "Test User",
+            Role = "Customer",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Users.Add(user);
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-CONCURRENT",
+            Status = "Pending",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order);
+
+        var orderItem = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            ProductId = product.Id,
+            ProductName = "Test Product",
+            Quantity = 1,
+            UnitPrice = 100.00m,
+            TotalPrice = 100.00m
+        };
+        _context.OrderItems.Add(orderItem);
+
+        await _context.SaveChangesAsync();
+
+        const string eventId = "evt_test_concurrent";
+        const string paymentIntentId = "pi_test_concurrent";
+
+        // Act - Process the same event concurrently with separate DbContext instances
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_postgresContainer.GetConnectionString())
+            .Options;
+
+        using var context1 = new ApplicationDbContext(options);
+        using var context2 = new ApplicationDbContext(options);
+
+        var service1 = CreateOrderService(context1);
+        var service2 = CreateOrderService(context2);
+
+        var results = await Task.WhenAll(
+            service1.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId),
+            service2.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId)
+        );
+
+        // Assert - Both should return true (webhook 200)
+        Assert.True(results[0]);
+        Assert.True(results[1]);
+
+        // Verify order was marked paid only once
+        _context.ChangeTracker.Clear();
+        var paidOrder = await _context.Orders.FindAsync(order.Id);
+        Assert.Equal("Paid", paidOrder?.Status);
+        Assert.Equal(paymentIntentId, paidOrder?.StripePaymentIntentId);
+
+        // Verify stock was decremented only once
+        var stockProduct = await _context.Products.FindAsync(product.Id);
+        Assert.Equal(9, stockProduct?.Stock); // Started at 10, decremented once
+
+        // Verify exactly one processed event record exists
+        var eventCount = await _context.ProcessedWebhookEvents
+            .Where(e => e.EventId == eventId)
+            .CountAsync();
+        Assert.Equal(1, eventCount);
+
+        // Verify exactly one email was sent
+        _mockEmailService.Verify(
+            x => x.SendOrderConfirmationEmailAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<decimal>(),
+                It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessStripePaymentAsync_TwoDifferentEventsForOneOrder_StockDecrementedOnce()
+    {
+        // Arrange - Create test data
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Category",
+            Slug = "test-category",
+            DisplayOrder = 0,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context!.Categories.Add(category);
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Product",
+            Description = "Test",
+            Price = 100.00m,
+            Stock = 10,
+            Slug = "test-product",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(product);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "test@example.com",
+            PasswordHash = "hash",
+            FirstName = "Test",
+            LastName = "User",
+            Name = "Test User",
+            Role = "Customer",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Users.Add(user);
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-TWOEVENTS",
+            Status = "Pending",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order);
+
+        var orderItem = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            ProductId = product.Id,
+            ProductName = "Test Product",
+            Quantity = 1,
+            UnitPrice = 100.00m,
+            TotalPrice = 100.00m
+        };
+        _context.OrderItems.Add(orderItem);
+
+        await _context.SaveChangesAsync();
+
+        const string eventId1 = "evt_test_first";
+        const string eventId2 = "evt_test_second";
+        const string paymentIntentId = "pi_test_twoevents";
+
+        // Act - Process two different events for the same order
+        var firstResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId1);
+
+        _context.ChangeTracker.Clear();
+        _orderService = CreateOrderService(_context);
+
+        var secondResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId2);
+
+        // Assert - Both should return true (webhook 200)
+        Assert.True(firstResult);
+        Assert.True(secondResult);
+
+        // Verify order was marked paid only once
+        _context.ChangeTracker.Clear();
+        var paidOrder = await _context.Orders.FindAsync(order.Id);
+        Assert.Equal("Paid", paidOrder?.Status);
+        Assert.Equal(paymentIntentId, paidOrder?.StripePaymentIntentId);
+
+        // Verify stock was decremented only once
+        var stockProduct = await _context.Products.FindAsync(product.Id);
+        Assert.Equal(9, stockProduct?.Stock); // Started at 10, decremented once
+
+        // Verify two processed event records exist
+        var eventCount = await _context.ProcessedWebhookEvents
+            .Where(e => e.EventId == eventId1 || e.EventId == eventId2)
+            .CountAsync();
+        Assert.Equal(2, eventCount);
+
+        // Verify exactly one email was sent
+        _mockEmailService.Verify(
+            x => x.SendOrderConfirmationEmailAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<decimal>(),
+                It.IsAny<string>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessStripePaymentAsync_CancelledOrder_Rejected()
+    {
+        // Arrange - Create test data
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Category",
+            Slug = "test-category",
+            DisplayOrder = 0,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context!.Categories.Add(category);
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Product",
+            Description = "Test",
+            Price = 100.00m,
+            Stock = 10,
+            Slug = "test-product",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(product);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "test@example.com",
+            PasswordHash = "hash",
+            FirstName = "Test",
+            LastName = "User",
+            Name = "Test User",
+            Role = "Customer",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Users.Add(user);
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-CANCELLED",
+            Status = "Cancelled",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order);
+
+        await _context.SaveChangesAsync();
+
+        const string eventId = "evt_test_cancelled";
+        const string paymentIntentId = "pi_test_cancelled";
+
+        // Act - Process payment for cancelled order
+        var result = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+
+        // Assert - Should return false (rejected)
+        Assert.False(result);
+
+        // Verify order status is still Cancelled
+        _context.ChangeTracker.Clear();
+        var orderStatus = await _context.Orders.FindAsync(order.Id);
+        Assert.Equal("Cancelled", orderStatus?.Status);
+
+        // Verify stock was not decremented
+        var stockProduct = await _context.Products.FindAsync(product.Id);
+        Assert.Equal(10, stockProduct?.Stock);
+
+        // Verify no event row was created
+        var eventExists = await _context.ProcessedWebhookEvents
+            .AnyAsync(e => e.EventId == eventId);
+        Assert.False(eventExists);
+
+        // Verify no email was sent
+        _mockEmailService.Verify(
+            x => x.SendOrderConfirmationEmailAsync(
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<string>(),
+                It.IsAny<decimal>(),
+                It.IsAny<string>()),
+            Times.Never);
     }
 }

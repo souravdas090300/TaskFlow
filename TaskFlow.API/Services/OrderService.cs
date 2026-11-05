@@ -282,40 +282,60 @@ public class OrderService
             return false;
         }
 
-        // Cannot process if already paid with different payment intent
-        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
+        if (!IsOrderPayable(order, paymentIntentId))
             return false;
-
-        // Cannot process if order is cancelled, shipped, or delivered
-        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
-        {
-            _logger.LogError(
-                "Stripe event {EventId}: payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
-                eventId, paymentIntentId, order.OrderNumber, order.Status);
-            return false;
-        }
 
         var paidAt = DateTime.UtcNow;
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
-        // 1. Idempotency: mark event processed
         if (!await _eventRepository.TryMarkProcessedAsync(eventId))
             return true; // Already processed
 
-        // 2. Atomic Pending -> Paid
         if (!await _orderRepository.TryMarkPaidAsync(orderId, paymentIntentId, eventId, paidAt))
         {
             await transaction.CommitAsync(); // Keep the event record
             return true; // Already paid by another event
         }
 
-        // 3. Atomic stock decrement for every line
         var orderItems = await _context.OrderItems
             .Where(oi => oi.OrderId == orderId)
             .ToListAsync();
 
-        var stockOk = true;
+        var stockOk = await TryDecrementStockAsync(orderItems);
+
+        if (stockOk)
+        {
+            await ClearCartAsync(order.UserId);
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+            await TrySendConfirmationEmailAsync(order, paidAt);
+            return true;
+        }
+
+        await transaction.RollbackAsync();
+        await FlagPaymentReviewAsync(orderId, paymentIntentId, eventId, order.OrderNumber);
+        return true;
+    }
+
+    private bool IsOrderPayable(Order order, string paymentIntentId)
+    {
+        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
+            return false;
+
+        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
+        {
+            _logger.LogError(
+                "Stripe event for payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
+                paymentIntentId, order.OrderNumber, order.Status);
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<bool> TryDecrementStockAsync(List<OrderItem> orderItems)
+    {
         foreach (var item in orderItems.OrderBy(i => i.ProductId))
         {
             var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
@@ -323,88 +343,65 @@ public class OrderService
                 item.Quantity, item.ProductId);
 
             if (rowsAffected == 0)
-            {
-                stockOk = false;
-                break;
-            }
+                return false;
         }
 
-        if (stockOk)
+        return true;
+    }
+
+    private async Task ClearCartAsync(Guid userId)
+    {
+        var cart = await _context.Carts
+            .Include(c => c.Items)
+            .FirstOrDefaultAsync(c => c.UserId == userId);
+        if (cart != null)
         {
-            // Clear user's cart
-            var cart = await _context.Carts
-                .Include(c => c.Items)
-                .FirstOrDefaultAsync(c => c.UserId == order.UserId);
-            if (cart != null)
-            {
-                _context.CartItems.RemoveRange(cart.Items);
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            // Send order confirmation email (after successful transaction)
-            // Wrapped in try/catch to prevent webhook retry on email failure
-            var user = await _context.Users.FindAsync(order.UserId);
-            if (user != null)
-            {
-                try
-                {
-                    await _emailService.SendOrderConfirmationEmailAsync(
-                        user.Email,
-                        $"{user.FirstName} {user.LastName}",
-                        order.OrderNumber,
-                        order.Total,
-                        paidAt.ToString(DateFormat)
-                    );
-                }
-                catch (Exception ex)
-                {
-                    // Log email failure but don't fail the webhook
-                    // Order is already paid and committed
-                    _logger.LogError(ex, "Failed to send order confirmation email for {OrderNumber}", order.OrderNumber);
-                }
-            }
-
-            return true;
+            _context.CartItems.RemoveRange(cart.Items);
         }
+    }
 
-        await transaction.RollbackAsync(); // Undoes Paid flag, event row, and any partial stock decrements
+    private async Task TrySendConfirmationEmailAsync(Order order, DateTime paidAt)
+    {
+        var user = await _context.Users.FindAsync(order.UserId);
+        if (user != null)
+        {
+            try
+            {
+                await _emailService.SendOrderConfirmationEmailAsync(
+                    user.Email,
+                    $"{user.FirstName} {user.LastName}",
+                    order.OrderNumber,
+                    order.Total,
+                    paidAt.ToString(DateFormat)
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send order confirmation email for {OrderNumber}", order.OrderNumber);
+            }
+        }
+    }
 
-        // Money was taken but we cannot fulfil. Record the event and flag the order for an admin.
+    private async Task FlagPaymentReviewAsync(Guid orderId, string paymentIntentId, string eventId, string orderNumber)
+    {
         await using var reviewTransaction = await _context.Database.BeginTransactionAsync();
         try
         {
             if (!await _eventRepository.TryMarkProcessedAsync(eventId))
-                return true; // Already processed
+                return;
+
             await _orderRepository.MarkPaymentReviewAsync(orderId, paymentIntentId);
             await reviewTransaction.CommitAsync();
+
+            _logger.LogError(
+                "Order {OrderNumber} paid ({PaymentIntent}) but stock is insufficient. Flagged PaymentReview: refund or restock.",
+                orderNumber, paymentIntentId);
         }
         catch
         {
             await reviewTransaction.RollbackAsync();
             throw;
         }
-
-        _logger.LogError(
-            "Order {OrderNumber} paid ({PaymentIntent}) but stock is insufficient. Flagged PaymentReview: refund or restock.",
-            order.OrderNumber, paymentIntentId);
-        return true; // Return 200 to Stripe so it doesn't retry
-    }
-
-    private static bool IsDuplicateKeyException(Microsoft.EntityFrameworkCore.DbUpdateException ex)
-    {
-        // Check for PostgreSQL unique constraint violation (23505)
-        // and SQL Server unique constraint violation (2601, 2627)
-        var sqlException = ex.InnerException as Npgsql.PostgresException;
-        if (sqlException != null)
-        {
-            return sqlException.SqlState == "23505"; // unique_violation
-        }
-
-        // For SQL Server or other providers, check inner exception
-        return ex.InnerException?.Message.Contains("unique") == true ||
-               ex.InnerException?.Message.Contains("duplicate") == true;
     }
 
     public async Task<bool> ProcessCashOnDeliveryAsync(Guid orderId)
