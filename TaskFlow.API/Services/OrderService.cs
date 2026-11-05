@@ -4,6 +4,7 @@ using Npgsql;
 using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
+using TaskFlow.Domain;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
 
@@ -273,29 +274,29 @@ public class OrderService
         return result;
     }
 
-    public async Task<bool> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
+    public async Task<PaymentResult> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
     {
         var order = await _context.Orders.FindAsync(orderId);
         if (order == null)
         {
             _logger.LogError("Stripe event {EventId}: order {OrderId} not found", eventId, orderId);
-            return false;
+            return PaymentResult.OrderNotFound;
         }
 
         if (!IsOrderPayable(order, paymentIntentId))
-            return false;
+            return PaymentResult.Rejected;
 
         var paidAt = DateTime.UtcNow;
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         if (!await _eventRepository.TryMarkProcessedAsync(eventId))
-            return true; // Already processed
+            return PaymentResult.AlreadyProcessed;
 
         if (!await _orderRepository.TryMarkPaidAsync(orderId, paymentIntentId, eventId, paidAt))
         {
             await transaction.CommitAsync(); // Keep the event record
-            return true; // Already paid by another event
+            return PaymentResult.AlreadyProcessed;
         }
 
         var orderItems = await _context.OrderItems
@@ -310,12 +311,12 @@ public class OrderService
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             await TrySendConfirmationEmailAsync(order, paidAt);
-            return true;
+            return PaymentResult.Processed;
         }
 
         await transaction.RollbackAsync();
         await FlagPaymentReviewAsync(orderId, paymentIntentId, eventId, order.OrderNumber);
-        return true;
+        return PaymentResult.StockConflict;
     }
 
     private bool IsOrderPayable(Order order, string paymentIntentId)

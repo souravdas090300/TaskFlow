@@ -14,6 +14,7 @@ using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
 using TaskFlow.Application.Validators;
+using TaskFlow.Domain;
 using TaskFlow.Infrastructure;
 using TaskFlow.Infrastructure.Repositories;
 using TaskFlow.Infrastructure.Services;
@@ -830,7 +831,13 @@ app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway p
                 300
             );
             
-            await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, stripeEvent.Id);
+            var result = await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, stripeEvent.Id);
+
+            // All successful results (Processed, AlreadyProcessed, StockConflict) return 200
+            // Stripe should not retry these
+            // Rejected and OrderNotFound also return 200 to avoid indefinite retries
+            // but are logged at error level for admin review
+            return Results.Ok();
         }
         catch (Exception e)
         {
