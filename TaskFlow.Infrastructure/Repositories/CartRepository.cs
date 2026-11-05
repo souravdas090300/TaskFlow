@@ -51,7 +51,7 @@ public class CartRepository : ICartRepository
         var cart = await _context.Carts
             .Include(c => c.Items)
             .FirstOrDefaultAsync(c => c.UserId == userId);
-        
+
         if (cart != null && cart.Items.Any())
         {
             _context.CartItems.RemoveRange(cart.Items);
