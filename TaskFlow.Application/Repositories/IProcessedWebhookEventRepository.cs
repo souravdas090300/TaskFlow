@@ -10,4 +10,5 @@ public interface IProcessedWebhookEventRepository
 {
     Task<bool> ExistsByEventIdAsync(string eventId);
     Task AddAsync(ProcessedWebhookEvent webhookEvent);
+    Task<bool> TryMarkProcessedAsync(string eventId);
 }

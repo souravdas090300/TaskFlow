@@ -24,4 +24,14 @@ public class ProcessedWebhookEventRepository : IProcessedWebhookEventRepository
         _context.ProcessedWebhookEvents.Add(webhookEvent);
         await _context.SaveChangesAsync();
     }
+
+    public async Task<bool> TryMarkProcessedAsync(string eventId)
+    {
+        // ON CONFLICT DO NOTHING does not abort the surrounding Postgres transaction
+        var rows = await _context.Database.ExecuteSqlInterpolatedAsync($@"
+            INSERT INTO ""ProcessedWebhookEvents"" (""EventId"", ""ProcessedAt"")
+            VALUES ({eventId}, {DateTime.UtcNow})
+            ON CONFLICT (""EventId"") DO NOTHING");
+        return rows == 1;
+    }
 }

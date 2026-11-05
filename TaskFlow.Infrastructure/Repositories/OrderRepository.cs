@@ -72,4 +72,28 @@ public class OrderRepository : IOrderRepository
     {
         return await _context.Orders.AnyAsync(o => o.OrderNumber == orderNumber);
     }
+
+    public async Task<bool> TryMarkPaidAsync(Guid orderId, string paymentIntentId, DateTime paidAtUtc)
+    {
+        var token = Guid.NewGuid();
+        var rows = await _context.Orders
+            .Where(o => o.Id == orderId && o.Status == "Pending")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.Status, "Paid")
+                .SetProperty(o => o.StripePaymentIntentId, paymentIntentId)
+                .SetProperty(o => o.PaidAt, (DateTime?)paidAtUtc)
+                .SetProperty(o => o.ConcurrencyToken, token));
+        return rows == 1;
+    }
+
+    public async Task MarkPaymentReviewAsync(Guid orderId, string paymentIntentId)
+    {
+        var token = Guid.NewGuid();
+        await _context.Orders
+            .Where(o => o.Id == orderId && o.Status == "Pending")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.Status, "PaymentReview")
+                .SetProperty(o => o.StripePaymentIntentId, paymentIntentId)
+                .SetProperty(o => o.ConcurrencyToken, token));
+    }
 }

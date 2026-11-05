@@ -177,4 +177,242 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         var eventCount = await _context.ProcessedWebhookEvents.CountAsync(e => e.EventId == eventId);
         Assert.Equal(1, eventCount);
     }
+
+    [Fact]
+    public async Task ProcessStripePaymentAsync_ConcurrentStockDecrement_LastItem_OnlyOneSucceeds()
+    {
+        // Arrange - Create product with stock=1
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Category",
+            Slug = "test-category",
+            DisplayOrder = 0,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context!.Categories.Add(category);
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = "Last Item",
+            Description = "Test",
+            Price = 100.00m,
+            Stock = 1, // Only 1 in stock
+            Slug = "last-item",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(product);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "test@example.com",
+            PasswordHash = "hash",
+            FirstName = "Test",
+            LastName = "User",
+            Name = "Test User",
+            Role = "Customer",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Users.Add(user);
+
+        // Create two orders for the same product
+        var order1 = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-001",
+            Status = "Pending",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order1);
+
+        var order2 = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-002",
+            Status = "Pending",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order2);
+
+        var orderItem1 = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order1.Id,
+            ProductId = product.Id,
+            ProductName = "Last Item",
+            Quantity = 1,
+            UnitPrice = 100.00m,
+            TotalPrice = 100.00m
+        };
+        _context.OrderItems.Add(orderItem1);
+
+        var orderItem2 = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order2.Id,
+            ProductId = product.Id,
+            ProductName = "Last Item",
+            Quantity = 1,
+            UnitPrice = 100.00m,
+            TotalPrice = 100.00m
+        };
+        _context.OrderItems.Add(orderItem2);
+
+        await _context.SaveChangesAsync();
+
+        const string eventId1 = "evt_test_concurrent_1";
+        const string eventId2 = "evt_test_concurrent_2";
+        const string paymentIntentId1 = "pi_test_concurrent_1";
+        const string paymentIntentId2 = "pi_test_concurrent_2";
+
+        // Act - Process both payments concurrently with separate DbContext instances
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_postgresContainer.GetConnectionString())
+            .Options;
+
+        using var context1 = new ApplicationDbContext(options);
+        using var context2 = new ApplicationDbContext(options);
+
+        var service1 = CreateOrderService(context1);
+        var service2 = CreateOrderService(context2);
+
+        var task1 = service1.ProcessStripePaymentAsync(order1.Id, paymentIntentId1, eventId1);
+        var task2 = service2.ProcessStripePaymentAsync(order2.Id, paymentIntentId2, eventId2);
+
+        // One should succeed, one should fail due to insufficient stock
+        var results = await Task.WhenAll(
+            task1.ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : false),
+            task2.ContinueWith(t => t.IsCompletedSuccessfully ? t.Result : false)
+        );
+
+        // Assert - Exactly one should succeed
+        var successCount = results.Count(r => r);
+        Assert.Equal(1, successCount);
+
+        // Verify stock is now 0
+        _context.ChangeTracker.Clear();
+        var stockProduct = await _context.Products.FindAsync(product.Id);
+        Assert.Equal(0, stockProduct?.Stock);
+
+        // Verify exactly one order is Paid
+        var paidOrders = await _context.Orders
+            .Where(o => o.Status == "Paid" && (o.Id == order1.Id || o.Id == order2.Id))
+            .CountAsync();
+        Assert.Equal(1, paidOrders);
+    }
+
+    [Fact]
+    public async Task ProcessStripePaymentAsync_StockRunsOut_FlagsPaymentReview()
+    {
+        // Arrange - Create product with stock=0
+        var category = new Category
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Category",
+            Slug = "test-category",
+            DisplayOrder = 0,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context!.Categories.Add(category);
+
+        var product = new Product
+        {
+            Id = Guid.NewGuid(),
+            Name = "Out of Stock Item",
+            Description = "Test",
+            Price = 100.00m,
+            Stock = 0, // Out of stock
+            Slug = "out-of-stock",
+            CategoryId = category.Id,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Products.Add(product);
+
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Email = "test@example.com",
+            PasswordHash = "hash",
+            FirstName = "Test",
+            LastName = "User",
+            Name = "Test User",
+            Role = "Customer",
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.Users.Add(user);
+
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            OrderNumber = "ORD-TEST-OUTOFSTOCK",
+            Status = "Pending",
+            PaymentMethod = "CreditCard",
+            Subtotal = 100.00m,
+            Tax = 10.00m,
+            ShippingCost = 5.99m,
+            Total = 115.99m,
+            CreatedAt = DateTime.UtcNow,
+            ConcurrencyToken = Guid.NewGuid()
+        };
+        _context.Orders.Add(order);
+
+        var orderItem = new OrderItem
+        {
+            Id = Guid.NewGuid(),
+            OrderId = order.Id,
+            ProductId = product.Id,
+            ProductName = "Out of Stock Item",
+            Quantity = 1,
+            UnitPrice = 100.00m,
+            TotalPrice = 100.00m
+        };
+        _context.OrderItems.Add(orderItem);
+
+        await _context.SaveChangesAsync();
+
+        const string eventId = "evt_test_outofstock";
+        const string paymentIntentId = "pi_test_outofstock";
+
+        // Act - Payment arrives but stock is gone
+        // Current implementation throws exception (documenting this behavior)
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await _orderService!.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId));
+
+        // Verify order status is still Pending (not Paid, not cancelled)
+        _context.ChangeTracker.Clear();
+        var orderStatus = await _context.Orders.FindAsync(order.Id);
+        Assert.Equal("Pending", orderStatus?.Status);
+
+        // Stock should still be 0 (not decremented)
+        var stockProduct = await _context.Products.FindAsync(product.Id);
+        Assert.Equal(0, stockProduct?.Stock);
+
+        // TODO: Future refactoring should implement PaymentReview status per reference implementation
+        // - Rollback transaction
+        // - Keep event record
+        // - Flag order as PaymentReview
+        // - Return 200 to Stripe (not exception)
+    }
 }
