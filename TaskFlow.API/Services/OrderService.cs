@@ -1,10 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using TaskFlow.Application;
 using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
-using TaskFlow.Domain;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
 

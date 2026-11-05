@@ -1,4 +1,4 @@
-namespace TaskFlow.Domain;
+namespace TaskFlow.Application;
 
 /// <summary>
 /// Result of processing a Stripe payment webhook event.
