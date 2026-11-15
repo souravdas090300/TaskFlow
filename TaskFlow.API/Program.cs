@@ -49,7 +49,6 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<TaskFlow.Application.Services.CheckoutService>();
 
 // Register repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
@@ -62,7 +61,20 @@ builder.Services.AddScoped<IAddressLookup, AddressLookup>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Register email service
-builder.Services.AddScoped<IEmailService, MockEmailService>();
+builder.Services.AddHttpClient<ResendEmailService>(client =>
+{
+    client.BaseAddress = new Uri("https://api.resend.com/");
+});
+builder.Services.Configure<ResendOptions>(builder.Configuration.GetSection("Resend"));
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddScoped<IEmailService, MockEmailService>();
+}
+else
+{
+    builder.Services.AddScoped<IEmailService, ResendEmailService>();
+}
 
 // Register payment gateway
 builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
