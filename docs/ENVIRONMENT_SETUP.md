@@ -86,7 +86,7 @@ cp .env.example .env
 
 | Variable | Description | Example | Required |
 |----------|-------------|---------|----------|
-| `DUCKDNS_SUBDOMAIN` | DuckDNS subdomain | `taskflow-sourav` | Yes (for production) |
+| `DUCKDNS_SUBDOMAIN` | DuckDNS subdomain | `taskflow-das` | Yes (for production) |
 | `DUCKDNS_TOKEN` | DuckDNS authentication token | `abc123def456` | Yes (for production) |
 
 **How to get these:**
@@ -272,7 +272,7 @@ DB_USER=taskflow
 DB_PASSWORD=xK9#mP2$vL8&nQ5!zR3%wE7@sD1
 GOOGLE_CLIENT_ID=987654321.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=GOCSPX-xyz789
-DUCKDNS_SUBDOMAIN=taskflow-sourav
+DUCKDNS_SUBDOMAIN=taskflow-das
 DUCKDNS_TOKEN=abc123def456ghi789
 ```
 

@@ -1,9 +1,10 @@
 using Microsoft.EntityFrameworkCore;
+using TaskFlow.Application.Persistence;
 using TaskFlow.Domain.Entities;
 
 namespace TaskFlow.Infrastructure;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)

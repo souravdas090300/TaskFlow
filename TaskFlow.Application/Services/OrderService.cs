@@ -1,21 +1,20 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 using TaskFlow.Application;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Persistence;
 using TaskFlow.Application.Repositories;
-using TaskFlow.Application.Services;
 using TaskFlow.Domain.Entities;
-using TaskFlow.Infrastructure;
 
-namespace TaskFlow.API.Services;
+namespace TaskFlow.Application.Services;
 
 public class OrderService
 {
     private const string DateFormat = "MMMM dd, yyyy";
     private const string ShippedStatus = "Shipped";
 
-    private readonly ApplicationDbContext _context;
+    private readonly IApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
     private readonly IOrderRepository _orderRepository;
@@ -24,7 +23,7 @@ public class OrderService
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
-        ApplicationDbContext context,
+        IApplicationDbContext context,
         IConfiguration configuration,
         IEmailService emailService,
         IOrderRepository orderRepository,

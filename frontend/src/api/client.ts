@@ -1,9 +1,12 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Empty in production builds -> same-origin relative "/api" requests, proxied by the
+// frontend nginx to the API container. Dev falls back to the local API port.
+const API_BASE_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.DEV ? 'http://localhost:5000' : '');
 
 export const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },

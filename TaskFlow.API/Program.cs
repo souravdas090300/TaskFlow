@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -12,6 +13,7 @@ using TaskFlow.API.Services;
 using TaskFlow.API.Models;
 using TaskFlow.API.Endpoints;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Persistence;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
 using TaskFlow.Application.Validators;
@@ -40,8 +42,13 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =
 
 // Configure Entity Framework Core
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrEmpty(connectionString))
+{
+    throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured.");
+}
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
 // Register application services
 builder.Services.AddScoped<ProductService>();
@@ -68,7 +75,23 @@ builder.Services.AddHttpClient<ResendEmailService>(client =>
 {
     client.BaseAddress = new Uri("https://api.resend.com/");
 });
-builder.Services.Configure<ResendOptions>(builder.Configuration.GetSection("Resend"));
+
+var resendOptions = builder.Services.AddOptions<ResendOptions>()
+    .Bind(builder.Configuration.GetSection("Resend"));
+if (!builder.Environment.IsDevelopment())
+{
+    // ResendEmailService is the registered IEmailService outside Development: fail fast if not configured.
+    resendOptions.Validate(o => !string.IsNullOrWhiteSpace(o.ApiKey) && !string.IsNullOrWhiteSpace(o.FromEmail),
+        "Resend:ApiKey and Resend:FromEmail must be configured in production.").ValidateOnStart();
+}
+
+// Fail fast on invalid order settings instead of silently mispricing orders.
+builder.Services.AddOptions<OrderSettings>()
+    .Bind(builder.Configuration.GetSection("OrderSettings"))
+    .Validate(s => s.TaxRate >= 0m && s.TaxRate < 1m, "OrderSettings:TaxRate must be >= 0 and < 1.")
+    .Validate(s => s.FreeShippingThreshold >= 0m, "OrderSettings:FreeShippingThreshold must be >= 0.")
+    .Validate(s => s.ShippingCost >= 0m, "OrderSettings:ShippingCost must be >= 0.")
+    .ValidateOnStart();
 
 if (builder.Environment.IsDevelopment())
 {
@@ -150,6 +173,19 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// The app runs behind Nginx Proxy Manager, which sets X-Forwarded-* headers.
+// Clear KnownNetworks/KnownProxies so the real client IP/proto is used for
+// rate limiting, auth redirects and logging. Restrict via "ForwardedHeaders"
+// config if the proxy ever changes.
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // Use rate limiting
 app.UseIpRateLimiting();

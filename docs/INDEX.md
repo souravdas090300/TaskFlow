@@ -10,6 +10,8 @@ Complete documentation for the TaskFlow e-commerce solution.
 - [Production Deployment](PRODUCTION_DEPLOYMENT.md) - VPS deployment with Nginx Proxy Manager
 - [Google Authentication](GOOGLE_AUTH_SETUP.md) - OAuth integration guide
 - [Database Setup](DATABASE_SETUP.md) - PostgreSQL and EF Core configuration
+- [Backup & Rollback](BACKUP_AND_ROLLBACK.md) - DB backups, restore, and app rollback procedures
+- [Mutation Testing](MUTATION_TESTING.md) - Stryker.NET setup for tax calculation
 
 ---
 
@@ -170,8 +172,8 @@ Host=db;Port=5432;Database=taskflow;Username=taskflow;Password=${DB_PASSWORD}
 
 ### Production URLs
 
-- Frontend: https://taskflow-sourav.duckdns.org
-- API: https://api.taskflow-sourav.duckdns.org
+- Frontend: https://taskflow-das.duckdns.org
+- API: https://api.taskflow-das.duckdns.org
 - Nginx Admin: http://77.25.144.193:81
 
 ---

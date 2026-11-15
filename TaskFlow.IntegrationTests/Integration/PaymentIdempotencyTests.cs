@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
-using TaskFlow.API.Services;
 using TaskFlow.Application;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
@@ -11,7 +10,7 @@ using TaskFlow.Infrastructure;
 using TaskFlow.Infrastructure.Repositories;
 using Testcontainers.PostgreSql;
 
-namespace TaskFlow.UnitTests.Integration;
+namespace TaskFlow.IntegrationTests;
 
 public class PaymentIdempotencyTests : IAsyncLifetime
 {

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { api } from '../api/client';
 import { productsApi } from '../api/products';
 import type { Product } from '../api/products';
 import { Link } from 'react-router-dom';
@@ -16,8 +17,8 @@ export const Shop = () => {
   const { data: categories } = useQuery({
     queryKey: ['categories'],
     queryFn: async () => {
-      const response = await fetch('http://localhost:5000/api/categories');
-      return response.json();
+      const response = await api.get('/categories');
+      return response.data;
     },
   });
 

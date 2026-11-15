@@ -99,7 +99,7 @@ Add the following secrets:
 | `DB_PASSWORD` | PostgreSQL database password | Strong password (16+ chars) |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | `123456789.apps.googleusercontent.com` |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | `GOCSPX-abc123` |
-| `DUCKDNS_SUBDOMAIN` | DuckDNS subdomain | `taskflow-sourav` |
+| `DUCKDNS_SUBDOMAIN` | DuckDNS subdomain | `taskflow-das` |
 | `DUCKDNS_TOKEN` | DuckDNS authentication token | Your token from duckdns.org |
 
 ### How to Add SSH Private Key
@@ -145,7 +145,7 @@ cat > .env << EOF
 DB_PASSWORD=your-strong-password-here
 GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
-DUCKDNS_SUBDOMAIN=taskflow-sourav
+DUCKDNS_SUBDOMAIN=taskflow-das
 DUCKDNS_TOKEN=your-duckdns-token
 EOF
 ```
@@ -178,7 +178,7 @@ Open your browser: `http://your-vps-ip:81`
 ### 6.2 Create Proxy Hosts
 
 #### Proxy Host 1: Frontend
-- **Domain Names:** `taskflow-sourav.duckdns.org`
+- **Domain Names:** `taskflow-das.duckdns.org`
 - **Scheme:** `http`
 - **Forward Hostname:** `taskflow-frontend`
 - **Forward Port:** `80`
@@ -189,7 +189,7 @@ Open your browser: `http://your-vps-ip:81`
   - ✅ HSTS Enabled
 
 #### Proxy Host 2: API
-- **Domain Names:** `api.taskflow-sourav.duckdns.org`
+- **Domain Names:** `api.taskflow-das.duckdns.org`
 - **Scheme:** `http`
 - **Forward Hostname:** `taskflow-api`
 - **Forward Port:** `80`
@@ -203,8 +203,8 @@ Open your browser: `http://your-vps-ip:81`
 
 Add these to your Google Cloud Console:
 ```
-https://taskflow-sourav.duckdns.org/signin-google
-https://api.taskflow-sourav.duckdns.org/signin-google
+https://taskflow-das.duckdns.org/signin-google
+https://api.taskflow-das.duckdns.org/signin-google
 ```
 
 ## Step 7: Trigger CI/CD

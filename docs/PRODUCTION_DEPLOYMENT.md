@@ -2,7 +2,7 @@
 
 **Status:** Docker configuration updated
 **Services:** API, Frontend, Database, Nginx Proxy Manager, DuckDNS
-**Deployment Target:** VPS with IP 77.25.144.193
+**Deployment Target:** VPS with IP <YOUR_ORACLE_PUBLIC_IP>
 
 ---
 
@@ -10,7 +10,7 @@
 
 This configuration uses:
 - **Nginx Proxy Manager**: Manages SSL certificates and reverse proxy
-- **DuckDNS**: Keeps your domain `taskflow-sourav.duckdns.org` pointing to your VPS
+- **DuckDNS**: Keeps your domain `taskflow-das.duckdns.org` pointing to your VPS
 - **TaskFlow API**: .NET backend (exposed internally)
 - **TaskFlow Frontend**: React + Nginx (exposed internally)
 - **PostgreSQL**: Database
@@ -34,10 +34,25 @@ Internet → Nginx Proxy Manager (80/443) → TaskFlow Frontend (80)
 
 ## Prerequisites
 
-1. VPS with IP: `77.25.144.193`
-2. DuckDNS subdomain: `taskflow-sourav.duckdns.org`
+1. VPS with a public IP (Oracle Cloud VM, etc.) — replace `<YOUR_ORACLE_PUBLIC_IP>` below
+2. DuckDNS subdomain: `taskflow-das.duckdns.org`
 3. Docker installed on VPS
-4. Domain or DuckDNS configured to point to your VPS
+4. DuckDNS configured to point to your VPS public IP
+
+### Oracle Cloud (OCI) notes
+
+- **Ampere A1 (ARM64) shapes are fine** — `Dockerfile.migrator` detects
+  `TARGETARCH` and builds the EF bundle for `linux-arm64` automatically.
+- Open these ports in the OCI **Security List** (VCN subnet) *and* the OS
+  firewall: `22` (SSH), `80`, `443` (Nginx Proxy Manager). Port `81` (NPM admin)
+  is optional — restrict it to your own IP or don't expose it at all.
+- Ubuntu images on OCI ship with iptables rules; after opening the Security
+  List also run:
+  ```bash
+  sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+  sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+  sudo netfilter-persistent save   # or: sudo apt install iptables-persistent
+  ```
 
 ---
 
@@ -47,7 +62,7 @@ Internet → Nginx Proxy Manager (80/443) → TaskFlow Frontend (80)
 
 ```bash
 # On your local machine
-scp -r C:\dev\TaskFlow user@77.25.144.193:/home/user/TaskFlow
+scp -r C:\dev\TaskFlow user@<YOUR_ORACLE_PUBLIC_IP>:/home/user/TaskFlow
 ```
 
 Or use your preferred method (FTP, Git, etc.)
@@ -55,7 +70,7 @@ Or use your preferred method (FTP, Git, etc.)
 ### 1.2. SSH into VPS
 
 ```bash
-ssh user@77.25.144.193
+ssh user@<YOUR_ORACLE_PUBLIC_IP>
 cd TaskFlow
 ```
 
@@ -80,7 +95,7 @@ This will start all 5 services:
 
 Open your browser and navigate to:
 ```
-http://77.25.144.193:81
+http://<YOUR_ORACLE_PUBLIC_IP>:81
 ```
 
 **Default credentials:**
@@ -93,39 +108,33 @@ http://77.25.144.193:81
 
 1. Click **Hosts** > **Add Proxy Host**
 2. Fill in the details:
-   - **Domain Names**: `taskflow-sourav.duckdns.org`
+   - **Domain Names**: `taskflow-das.duckdns.org`
    - **Scheme**: `http`
    - **Forward Hostname/IP**: `taskflow-frontend`
    - **Forward Port**: `80`
 3. Click **Save**
 
-### 2.3. Add Proxy Host for API
+### 2.3. API routing (no second proxy host needed)
 
-1. Click **Hosts** > **Add Proxy Host**
-2. Fill in the details:
-   - **Domain Names**: `api.taskflow-sourav.duckdns.org`
-   - **Scheme**: `http`
-   - **Forward Hostname/IP**: `taskflow-api`
-   - **Forward Port**: `80`
-3. Click **Save**
+The frontend container's nginx already proxies `/api/*`, `/health`, `/login`,
+`/logout`, `/auth/user` and `/signin-google` to the `taskflow-api` container.
+So **one proxy host is enough** — API calls go to
+`https://taskflow-das.duckdns.org/api/...` on the same domain.
 
-### 2.4. Configure SSL Certificates
+### 2.4. Configure SSL Certificate
 
 1. Click **SSL Certificates** > **Add SSL Certificate**
 2. Select **Let's Encrypt**
 3. Fill in:
-   - **Domain Names**: `taskflow-sourav.duckdns.org, api.taskflow-sourav.duckdns.org`
+   - **Domain Names**: `taskflow-das.duckdns.org`
    - **Email**: Your email for Let's Encrypt notifications
 4. Click **Save**
 
-5. Go back to your proxy hosts and enable SSL:
-   - Edit the frontend proxy host
+5. Edit the proxy host and enable SSL:
    - Enable **SSL Certificate** and select the certificate you created
    - Enable **Force SSL** (redirect HTTP to HTTPS)
    - Enable **HTTP/2 Support**
    - Click **Save**
-
-6. Repeat for the API proxy host
 
 ---
 
@@ -137,8 +146,7 @@ Go to Google Cloud Console > APIs & Services > Credentials > Edit your OAuth cli
 
 Add these **Authorized redirect URIs**:
 ```
-https://taskflow-sourav.duckdns.org/signin-google
-https://api.taskflow-sourav.duckdns.org/signin-google
+https://taskflow-das.duckdns.org/signin-google
 ```
 
 ### 3.2. Update .env File on VPS
@@ -175,7 +183,7 @@ All services should show "Up" status.
 
 Open browser:
 ```
-https://taskflow-sourav.duckdns.org
+https://taskflow-das.duckdns.org
 ```
 
 You should see the React application.
@@ -184,7 +192,7 @@ You should see the React application.
 
 Open browser:
 ```
-https://api.taskflow-sourav.duckdns.org/health
+https://taskflow-das.duckdns.org/health
 ```
 
 Should return:
@@ -198,7 +206,7 @@ Should return:
 ### 4.4. Test Database Connection
 
 ```
-https://api.taskflow-sourav.duckdns.org/db-health
+https://taskflow-das.duckdns.org/db-health
 ```
 
 Should return:
@@ -213,7 +221,7 @@ Should return:
 
 Navigate to:
 ```
-https://taskflow-sourav.duckdns.org/login
+https://taskflow-das.duckdns.org/login
 ```
 
 Should redirect to Google OAuth.
@@ -226,20 +234,19 @@ Should redirect to Google OAuth.
 
 | Service | URL |
 |---------|-----|
-| Frontend | https://taskflow-sourav.duckdns.org |
-| API | https://api.taskflow-sourav.duckdns.org |
-| API Health | https://api.taskflow-sourav.duckdns.org/health |
-| Database Health | https://api.taskflow-sourav.duckdns.org/db-health |
-| Login | https://taskflow-sourav.duckdns.org/login |
-| Current User | https://api.taskflow-sourav.duckdns.org/auth/user |
-| Nginx Proxy Manager | http://77.25.144.193:81 |
+| Frontend | https://taskflow-das.duckdns.org |
+| API | https://taskflow-das.duckdns.org |
+| API Health | https://taskflow-das.duckdns.org/health |
+| Database Health | https://taskflow-das.duckdns.org/db-health |
+| Login | https://taskflow-das.duckdns.org/login |
+| Current User | https://taskflow-das.duckdns.org/api/auth/user |
+| Nginx Proxy Manager | http://<YOUR_ORACLE_PUBLIC_IP>:81 |
 
 ### Add to Google OAuth Console
 
 **Authorized redirect URIs:**
 ```
-https://taskflow-sourav.duckdns.org/signin-google
-https://api.taskflow-sourav.duckdns.org/signin-google
+https://taskflow-das.duckdns.org/signin-google
 ```
 
 ---
@@ -247,12 +254,12 @@ https://api.taskflow-sourav.duckdns.org/signin-google
 ## Step 6: DuckDNS Configuration
 
 The DuckDNS container is already configured with:
-- **Subdomain**: `taskflow-sourav`
+- **Subdomain**: `taskflow-das`
 - **Token**: Provided in your config
 
-This will automatically update DuckDNS to point to `77.25.144.193`.
+This will automatically update DuckDNS to point to `<YOUR_ORACLE_PUBLIC_IP>`.
 
-**Your production domain:** `taskflow-sourav.duckdns.org`
+**Your production domain:** `taskflow-das.duckdns.org`
 
 ---
 
@@ -314,7 +321,7 @@ docker-compose restart nginx-proxy-manager
 
 **Solution:**
 1. Verify DuckDNS is updated: Check duckdns.org
-2. Test port 80: `curl http://77.25.144.193`
+2. Test port 80: `curl http://<YOUR_ORACLE_PUBLIC_IP>`
 3. Check Nginx Proxy Manager logs for errors
 
 ### Issue: Frontend Not Loading
@@ -384,7 +391,7 @@ docker-compose logs -f nginx-proxy-manager
 
 ### Nginx Proxy Manager Dashboard
 
-Access at: `http://77.25.144.193:81`
+Access at: `http://<YOUR_ORACLE_PUBLIC_IP>:81`
 
 Shows:
 - Traffic statistics
@@ -408,7 +415,7 @@ Shows resource usage for all containers.
 
 If you want to use your own domain instead of DuckDNS:
 1. Buy a domain
-2. Create A record pointing to `77.25.144.193`
+2. Create A record pointing to `<YOUR_ORACLE_PUBLIC_IP>`
 3. Update Nginx Proxy Manager with new domain
 4. Update Google OAuth redirect URIs
 5. Update SSL certificate
@@ -457,6 +464,6 @@ Set up automated database backups:
 
 ---
 
-**Production URL:** https://taskflow-sourav.duckdns.org
-**API URL:** https://api.taskflow-sourav.duckdns.org
-**Nginx Proxy Manager:** http://77.25.144.193:81
+**Production URL:** https://taskflow-das.duckdns.org
+**API URL:** https://taskflow-das.duckdns.org
+**Nginx Proxy Manager:** http://<YOUR_ORACLE_PUBLIC_IP>:81

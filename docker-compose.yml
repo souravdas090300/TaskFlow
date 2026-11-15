@@ -46,6 +46,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
+      args:
+        # Empty VITE_API_URL -> same-origin /api calls via nginx proxy (production).
+        # Set VITE_API_URL in .env to override (e.g. http://localhost:5000 for dev).
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-}
     container_name: taskflow-frontend
     expose:
       - "80"

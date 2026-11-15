@@ -4,6 +4,11 @@ WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
+# Vite inlines import.meta.env.VITE_* at build time — pass them as build args.
+ARG VITE_API_URL
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ENV VITE_API_URL=$VITE_API_URL \
+    VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY
 RUN npm run build
 
 # Runtime stage (serve with Nginx)

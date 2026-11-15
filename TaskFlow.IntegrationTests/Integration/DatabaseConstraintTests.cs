@@ -6,7 +6,7 @@ using TaskFlow.Infrastructure;
 using Testcontainers.PostgreSql;
 using Xunit;
 
-namespace TaskFlow.UnitTests.Integration;
+namespace TaskFlow.IntegrationTests;
 
 public class DatabaseConstraintTests : IAsyncLifetime
 {
