@@ -49,12 +49,17 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<TaskFlow.Application.Services.CheckoutService>();
 
 // Register repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<IProcessedWebhookEventRepository, ProcessedWebhookEventRepository>();
 builder.Services.AddScoped<ICartRepository, CartRepository>();
+builder.Services.AddScoped<IStockRepository, StockRepository>();
+builder.Services.AddScoped<IUserDirectory, UserDirectory>();
+builder.Services.AddScoped<IAddressLookup, AddressLookup>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Register email service
 builder.Services.AddScoped<IEmailService, MockEmailService>();
