@@ -13,6 +13,11 @@ public interface IOrderRepository
     Task<List<Order>> GetUserOrdersAsync(Guid userId);
     Task<List<Order>> GetAllOrdersAsync();
     Task<Order> AddAsync(Order order);
+    /// <summary>Adds an order and its items in one SaveChanges.</summary>
+    Task AddWithItemsAsync(Order order, IEnumerable<OrderItem> items);
+    Task<List<OrderItem>> GetItemsAsync(Guid orderId);
+    /// <summary>Atomic Pending -> Paid transition for COD orders owned by the user. False = not eligible.</summary>
+    Task<bool> TryConfirmCashOnDeliveryAsync(Guid orderId, Guid userId, DateTime confirmedAtUtc);
     Task UpdateAsync(Order order);
     Task DeleteAsync(Order order);
     Task<bool> ExistsByOrderNumberAsync(string orderNumber);

@@ -27,6 +27,8 @@ public class CartRepository : ICartRepository
             .FirstOrDefaultAsync(c => c.UserId == userId);
     }
 
+    public Task<Cart?> GetForCheckoutAsync(Guid userId) => GetByUserIdWithItemsAsync(userId);
+
     public async Task<Cart> AddAsync(Cart cart)
     {
         _context.Carts.Add(cart);

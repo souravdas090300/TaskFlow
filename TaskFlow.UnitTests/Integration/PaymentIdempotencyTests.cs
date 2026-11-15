@@ -74,9 +74,10 @@ public class PaymentIdempotencyTests : IAsyncLifetime
 
         var orderRepository = new OrderRepository(context);
         var eventRepository = new ProcessedWebhookEventRepository(context);
+        var paymentIssueRepository = new PaymentIssueRepository(context);
         var logger = new Moq.Mock<Microsoft.Extensions.Logging.ILogger<OrderService>>();
 
-        return new OrderService(context, configuration, _mockEmailService.Object, orderRepository, eventRepository, logger.Object);
+        return new OrderService(context, configuration, _mockEmailService.Object, orderRepository, eventRepository, paymentIssueRepository, logger.Object);
     }
 
     [Fact]

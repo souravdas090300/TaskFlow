@@ -10,6 +10,7 @@ using System.Text;
 using TaskFlow.API.Middleware;
 using TaskFlow.API.Services;
 using TaskFlow.API.Models;
+using TaskFlow.API.Endpoints;
 using TaskFlow.Application.DTOs;
 using TaskFlow.Application.Repositories;
 using TaskFlow.Application.Services;
@@ -49,6 +50,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<TaskFlow.Application.Services.CheckoutService>();
 
 // Register repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
@@ -59,6 +61,7 @@ builder.Services.AddScoped<IStockRepository, StockRepository>();
 builder.Services.AddScoped<IUserDirectory, UserDirectory>();
 builder.Services.AddScoped<IAddressLookup, AddressLookup>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IPaymentIssueRepository, PaymentIssueRepository>();
 
 // Register email service
 builder.Services.AddHttpClient<ResendEmailService>(client =>
@@ -790,6 +793,9 @@ app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
 })
     .WithName("GetAdminStats")
     .RequireAuthorization(policy => policy.RequireRole(AdminRole));
+
+// Map payment issue endpoints
+app.MapPaymentIssueEndpoints();
 
 // Create Stripe checkout session
 app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, IPaymentGateway paymentGateway, OrderService orderService) =>

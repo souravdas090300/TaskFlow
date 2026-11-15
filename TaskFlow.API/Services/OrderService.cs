@@ -20,6 +20,7 @@ public class OrderService
     private readonly IEmailService _emailService;
     private readonly IOrderRepository _orderRepository;
     private readonly IProcessedWebhookEventRepository _eventRepository;
+    private readonly IPaymentIssueRepository _paymentIssues;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
@@ -28,6 +29,7 @@ public class OrderService
         IEmailService emailService,
         IOrderRepository orderRepository,
         IProcessedWebhookEventRepository eventRepository,
+        IPaymentIssueRepository paymentIssues,
         ILogger<OrderService> logger)
     {
         _context = context;
@@ -35,6 +37,7 @@ public class OrderService
         _emailService = emailService;
         _orderRepository = orderRepository;
         _eventRepository = eventRepository;
+        _paymentIssues = paymentIssues;
         _logger = logger;
     }
 
@@ -280,11 +283,18 @@ public class OrderService
         if (order == null)
         {
             _logger.LogError("Stripe event {EventId}: order {OrderId} not found", eventId, orderId);
+            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(null, null, paymentIntentId, eventId,
+                PaymentIssueType.OrderNotFound, $"Stripe event referenced unknown order {orderId}", DateTime.UtcNow));
             return PaymentResult.OrderNotFound;
         }
 
-        if (!IsOrderPayable(order, paymentIntentId))
+        var rejection = GetPaymentRejection(order, paymentIntentId, eventId);
+        if (rejection is not null)
+        {
+            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
+                rejection.Value.Type, rejection.Value.Details, DateTime.UtcNow));
             return PaymentResult.Rejected;
+        }
 
         var paidAt = DateTime.UtcNow;
 
@@ -319,20 +329,26 @@ public class OrderService
         return PaymentResult.StockConflict;
     }
 
-    private bool IsOrderPayable(Order order, string paymentIntentId)
+    private (PaymentIssueType Type, string Details)? GetPaymentRejection(Order order, string paymentIntentId, string eventId)
     {
         if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
-            return false;
+        {
+            _logger.LogError(
+                "Stripe event {EventId}: order {OrderNumber} already paid with DIFFERENT payment {OtherPayment}; {PaymentIntent} is a possible double charge. Refund needed.",
+                eventId, order.OrderNumber, order.StripePaymentIntentId, paymentIntentId);
+            return (PaymentIssueType.DoubleCharge,
+                $"Order already paid with {order.StripePaymentIntentId}; second payment {paymentIntentId} must be refunded.");
+        }
 
         if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
         {
             _logger.LogError(
-                "Stripe event for payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
-                paymentIntentId, order.OrderNumber, order.Status);
-            return false;
+                "Stripe event {EventId}: payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
+                eventId, paymentIntentId, order.OrderNumber, order.Status);
+            return (PaymentIssueType.OrderClosed, $"Payment arrived for an order in status {order.Status}.");
         }
 
-        return true;
+        return null;
     }
 
     private async Task<bool> TryDecrementStockAsync(List<OrderItem> orderItems)
@@ -392,6 +408,8 @@ public class OrderService
                 return;
 
             await _orderRepository.MarkPaymentReviewAsync(orderId, paymentIntentId);
+            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(orderId, orderNumber, paymentIntentId, eventId,
+                PaymentIssueType.StockConflict, "Paid at Stripe but stock ran out. Refund or restock.", DateTime.UtcNow));
             await reviewTransaction.CommitAsync();
 
             _logger.LogError(

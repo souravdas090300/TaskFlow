@@ -18,10 +18,28 @@ services:
     expose:
       - "80"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     networks:
       - taskflow-network
     restart: unless-stopped
+
+  # 1b. Database migrator (runs EF migrations bundle once, then exits)
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrator
+    container_name: taskflow-migrator
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=${DB_NAME:-taskflow};Username=${DB_USER:-taskflow};Password=${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - taskflow-network
+    restart: "no"
 
   # 2. TaskFlow Frontend (React + Nginx)
   frontend:

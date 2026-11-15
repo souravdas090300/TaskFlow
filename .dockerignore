@@ -12,6 +12,7 @@ out/
 docker-compose.yml
 Dockerfile
 Dockerfile.frontend
+Dockerfile.migrator
 .dockerignore
 
 # Git

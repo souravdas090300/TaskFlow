@@ -1,0 +1,19 @@
+# Replaces deploy/Dockerfile.migrator from the first package.
+# Fix: the bundle used -r linux-x64, which fails with "exec format error" on an ARM server (Oracle Ampere).
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG TARGETARCH
+WORKDIR /src
+COPY . .
+RUN dotnet tool install --global dotnet-ef --version "10.*"
+ENV PATH="${PATH}:/root/.dotnet/tools"
+RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
+ && dotnet ef migrations bundle \
+      --project TaskFlow.Infrastructure \
+      --startup-project TaskFlow.API \
+      --self-contained -r "$RID" \
+      --output /out/efbundle --force
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
+WORKDIR /app
+COPY --from=build /out/efbundle .
+ENTRYPOINT ["sh", "-c", "./efbundle --connection \"$ConnectionStrings__DefaultConnection\""]

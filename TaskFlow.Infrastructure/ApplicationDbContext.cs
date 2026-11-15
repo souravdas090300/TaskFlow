@@ -26,6 +26,7 @@ public class ApplicationDbContext : DbContext
     public DbSet<Review> Reviews { get; set; } = null!;
     public DbSet<WishlistItem> WishlistItems { get; set; } = null!;
     public DbSet<ProcessedWebhookEvent> ProcessedWebhookEvents { get; set; } = null!;
+    public DbSet<PaymentIssue> PaymentIssues { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -217,6 +218,20 @@ public class ApplicationDbContext : DbContext
         {
             entity.HasKey(e => e.EventId);
             entity.Property(e => e.EventId).HasMaxLength(255);
+        });
+
+        // PaymentIssue configuration
+        modelBuilder.Entity<PaymentIssue>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.EventId).IsUnique();
+            entity.HasIndex(e => e.IsResolved);
+            entity.Property(e => e.Type).HasConversion<string>().HasMaxLength(50);
+            entity.Property(e => e.EventId).HasMaxLength(255);
+            entity.Property(e => e.PaymentIntentId).HasMaxLength(255);
+            entity.Property(e => e.OrderNumber).HasMaxLength(100);
+            entity.Property(e => e.Details).HasMaxLength(1000);
+            entity.Property(e => e.ResolutionNote).HasMaxLength(500);
         });
     }
 }

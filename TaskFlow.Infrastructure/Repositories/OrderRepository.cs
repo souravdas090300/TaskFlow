@@ -56,6 +56,33 @@ public class OrderRepository : IOrderRepository
         return order;
     }
 
+    public async Task AddWithItemsAsync(Order order, IEnumerable<OrderItem> items)
+    {
+        _context.Orders.Add(order);
+        _context.OrderItems.AddRange(items);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<List<OrderItem>> GetItemsAsync(Guid orderId)
+    {
+        return await _context.OrderItems
+            .Where(i => i.OrderId == orderId)
+            .ToListAsync();
+    }
+
+    public async Task<bool> TryConfirmCashOnDeliveryAsync(Guid orderId, Guid userId, DateTime confirmedAtUtc)
+    {
+        var token = Guid.NewGuid();
+        var rows = await _context.Orders
+            .Where(o => o.Id == orderId && o.UserId == userId
+                && o.Status == "Pending" && o.PaymentMethod == "CashOnDelivery")
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(o => o.Status, "Paid")
+                .SetProperty(o => o.PaidAt, (DateTime?)confirmedAtUtc)
+                .SetProperty(o => o.ConcurrencyToken, token));
+        return rows == 1;
+    }
+
     public async Task UpdateAsync(Order order)
     {
         _context.Orders.Update(order);
