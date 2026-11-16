@@ -256,7 +256,7 @@ app.MapGet("/db-health", (ApplicationDbContext context) =>
 // ============ PRODUCT ENDPOINTS ============
 
 // Get all products with filtering and pagination
-app.MapGet("/api/products", async (ProductService productService, [FromQuery] ProductQueryDto query) =>
+app.MapGet("/api/products", async (ProductService productService, [AsParameters] ProductQueryDto query) =>
 {
     var products = await productService.GetAllProductsAsync(query.Page, query.PageSize, query.CategoryId, query.Search, query.MinPrice, query.MaxPrice, query.SortBy);
     return Results.Ok(products);
