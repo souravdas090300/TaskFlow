@@ -3,8 +3,8 @@ name: Deploy TaskFlow to Production VPS
 on:
   push:
     branches:
-      - main  # Trigger deployment when code merges into main
-  workflow_dispatch:  # Allow manual trigger from GitHub UI
+      - main
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -17,10 +17,19 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write # Added for CodeQL/Trivy
 
     steps:
     - name: Checkout Source Code
       uses: actions/checkout@v4
+
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Run Unit Tests
+      run: dotnet test TaskFlow.UnitTests/TaskFlow.UnitTests.csproj --configuration Release --verbosity normal
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -82,18 +91,11 @@ jobs:
         key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
         script: |
           set -e
-
-          # 1. Navigate to the correct deployment directory (Capital T)
           cd /home/${{ secrets.VPS_USERNAME }}/TaskFlow || exit 1
-
-          # 2. Pull latest code to get the updated docker-compose.yml
           git pull origin main || echo "Git pull skipped or already up to date"
 
-          # 3. Login to GitHub Container Registry
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-          # 4. Set environment variables dynamically without duplicating them
-          # This creates a clean .env file every time
           cat << EOF > .env
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
@@ -105,13 +107,7 @@ jobs:
           DOCKER_IMAGE_FRONTEND=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:latest
           EOF
 
-          # 5. Pull new images
           sudo docker compose pull
-
-          # 6. Restart services (The migrator container handles migrations automatically)
           sudo docker compose up -d --remove-orphans
-
-          # 7. Clean up old images to save disk space
           sudo docker image prune -f
-
           echo "Deployment completed successfully!"

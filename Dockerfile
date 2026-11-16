@@ -1,6 +1,10 @@
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+
+# Copy the central package management file FIRST
+COPY ["Directory.Packages.props", "./"]
+
 COPY ["TaskFlow.API/TaskFlow.API.csproj", "TaskFlow.API/"]
 COPY ["TaskFlow.Application/TaskFlow.Application.csproj", "TaskFlow.Application/"]
 COPY ["TaskFlow.Domain/TaskFlow.Domain.csproj", "TaskFlow.Domain/"]
