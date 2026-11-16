@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.OpenApi;
+using Microsoft.AspNetCore.Mvc; // Added for [FromQuery]
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
@@ -169,15 +170,11 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
 // The app runs behind Nginx Proxy Manager, which sets X-Forwarded-* headers.
-// Clear KnownNetworks/KnownProxies so the real client IP/proto is used for
-// rate limiting, auth redirects and logging. Restrict via "ForwardedHeaders"
-// config if the proxy ever changes.
 var forwardedHeadersOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
@@ -257,14 +254,13 @@ app.MapGet("/db-health", (ApplicationDbContext context) =>
     .AllowAnonymous();
 
 // ============ PRODUCT ENDPOINTS ============
+
 // Get all products with filtering and pagination
-app.MapGet("/api/products", async (ProductService productService, [AsParameters] ProductQueryDto query) =>
+app.MapGet("/api/products", async (ProductService productService, [FromQuery] ProductQueryDto query) =>
 {
     var products = await productService.GetAllProductsAsync(query.Page, query.PageSize, query.CategoryId, query.Search, query.MinPrice, query.MaxPrice, query.SortBy);
     return Results.Ok(products);
 })
-
-}
     .WithName("GetAllProducts")
     .AllowAnonymous();
 
