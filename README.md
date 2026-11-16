@@ -1,113 +1,115 @@
 # TaskFlow
 
-An E-Commerce solution built with .NET 10, React, PostgreSQL, and Docker.
+A full-stack e-commerce solution built with **.NET 10**, **React 19 + TypeScript + Vite**, **PostgreSQL 17**, **Stripe**, and **Docker**.
 
 ## Quick Start
 
 ### Local Development
 
 ```bash
-# Set up environment variables
-cp .env.dev .env
-# Edit .env with your Google OAuth credentials
+# Copy and fill in environment variables
+cp .env.example .env          # or .env.dev for the dev compose stack
+# Edit .env with your Google OAuth + Stripe test credentials
 
-# Build and run with Docker
-docker-compose -f docker-compose.dev.yml up -d
+# Start the dev stack (API + frontend + PostgreSQL)
+docker compose -f docker-compose.dev.yml up -d --build
 
 # Access the application
 # Frontend: http://localhost
-# API: http://localhost:5000
-# Health Check: http://localhost:5000/health
+# API:      http://localhost:5000  (also proxied at http://localhost/api)
+# Health:   http://localhost:5000/health
 ```
 
-### Documentation
+For local frontend development without Docker:
 
-Comprehensive documentation is available in the [docs/](docs/) folder:
+```bash
+cd frontend
+npm install
+npm run dev        # http://localhost:5173 - vite proxies /api to localhost:5000
+```
 
-- [Getting Started](docs/GETTING_STARTED.md) - Quick start guide
-- [Environment Setup](docs/ENVIRONMENT_SETUP.md) - Environment variable configuration
-- [CI/CD Setup](docs/CI_CD_SETUP.md) - GitHub Actions automated deployment
-- [Database Setup](docs/DATABASE_SETUP.md) - PostgreSQL and EF Core configuration
-- [Google Authentication](docs/GOOGLE_AUTH_SETUP.md) - OAuth integration guide
-- [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md) - VPS deployment with Nginx Proxy Manager
-- [Azure Deployment](docs/DEPLOYMENT.md) - Azure App Service deployment guide
-- [Docker Deployment](docs/DEPLOYMENT_DOCKER.md) - Docker VPS deployment guide
+### Run tests
+
+```bash
+dotnet test TaskFlow.UnitTests          # fast, no Docker needed
+dotnet test TaskFlow.IntegrationTests   # needs Docker (Testcontainers PostgreSQL)
+```
+
+## Production Deployment (Oracle Cloud)
+
+Deployed on an Oracle Cloud VM behind **Nginx Proxy Manager** with **DuckDNS** (`taskflow-das.duckdns.org`).
+
+```powershell
+# From Windows - upload the project to the server
+ssh -i "C:\Users\dasau\ssh-key-2026-11-15.key" ubuntu@92.5.144.125 -r C:\dev\TaskFlow ubuntu@92.5.144.125:~/TaskFlow
+```
+
+```bash
+# On the server (ssh -i "C:\Users\dasau\ssh-key-2026-11-15.key" ubuntu@92.5.144.125)
+sudo apt install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker $USER && newgrp docker
+
+cd ~/TaskFlow
+cp .env.prod .env       # fill in DB_PASSWORD, Stripe__*, Resend__*, etc.
+docker compose up -d --build
+```
+
+Then in Nginx Proxy Manager (`http://92.5.144.125:81`): add proxy host
+`taskflow-das.duckdns.org` → `http://taskflow-frontend:80` and issue a
+Let's Encrypt certificate (DNS challenge via DuckDNS).
+
+Full guide: [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)
 
 ## Architecture
 
-- **Backend**: ASP.NET Core 10.0 (API, Application, Domain, Infrastructure layers)
-- **Frontend**: React 19 + TypeScript + Vite
-- **Database**: PostgreSQL 17
-- **Deployment**: Docker Compose with Nginx Proxy Manager
-- **Authentication**: Google OAuth 2.0
-
-## Technology Stack
-
-### Backend
-- .NET 10.0
-- Entity Framework Core 10.0
-- PostgreSQL 17
-- Serilog (logging)
-- Google Authentication
-
-### Frontend
-- React 19.2.4
-- TypeScript 5.9.3
-- Vite 8.0.1
-- Nginx (production)
-
-### Infrastructure
-- Docker & Docker Compose
-- Nginx Proxy Manager (SSL certificates)
-- DuckDNS (dynamic DNS)
+- **Backend**: ASP.NET Core 10 minimal APIs, layered (API / Application / Domain / Infrastructure)
+- **Frontend**: React 19 + TypeScript + Vite, served by nginx (proxies `/api` to the API container)
+- **Database**: PostgreSQL 17 + EF Core migrations (incl. ARM64-aware `Dockerfile.migrator`)
+- **Payments**: Stripe (Checkout + webhooks, idempotent `payment_intent.succeeded` handling, PaymentReview for stock conflicts, admin payment-issues API)
+- **Email**: Resend (production) / mock (development)
+- **Auth**: JWT + Google OAuth
+- **Infra**: Docker Compose, Nginx Proxy Manager (SSL), DuckDNS
 
 ## Features
 
-- ✅ Google Sign In/Sign Up
-- ✅ User management with PostgreSQL
-- ✅ Database migrations
-- ✅ Health check endpoints
-- ✅ Docker containerization
-- ✅ SSL/TLS with Let's Encrypt
-- ✅ Dynamic DNS with DuckDNS
+- ✅ Product catalog with categories, images, variants
+- ✅ Shopping cart, addresses, coupons-ready order totals (tax/shipping rules)
+- ✅ Orders: Stripe + Cash on Delivery, cancellation, admin status/tracking
+- ✅ Stripe webhook idempotency + atomic stock decrement
+- ✅ Payment issue tracking for admin review (unknown order, closed order, double charge, stock conflict)
+- ✅ Admin dashboard (stats, orders, products, categories)
+- ✅ Rate limiting, global exception handling, forwarded headers
+- ✅ Docker Compose (dev / prod / full stack) + ARM64 migration bundle
+- ✅ Automated backups/restore scripts
 
-## Development Status
+## Documentation
 
-| Component | Status |
-|-----------|--------|
-| .NET 10 Upgrade | ✅ Complete |
-| PostgreSQL Integration | ✅ Complete |
-| Google OAuth | ✅ Infrastructure Ready |
-| Authentication Endpoints | ✅ Complete |
-| User Entity | ✅ Complete |
-| Database Migrations | ✅ Complete |
-| Docker Configuration | ✅ Complete |
-| Nginx Proxy Manager | ✅ Configured |
-| Production Deployment | ⏳ Ready for deployment |
+- [Getting Started](docs/GETTING_STARTED.md) - local development
+- [Environment Setup](docs/ENVIRONMENT_SETUP.md) - env var reference
+- [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md) - VPS + Nginx Proxy Manager + DuckDNS
+- [Backup & Rollback](docs/BACKUP_AND_ROLLBACK.md) - DB backups, restore, app rollback
+- [Mutation Testing](docs/MUTATION_TESTING.md) - Stryker.NET for pricing logic
+- [CI/CD Setup](docs/CI_CD_SETUP.md) - GitHub Actions
+- [Google Authentication](docs/GOOGLE_AUTH_SETUP.md) - OAuth setup
+- [Database Setup](docs/DATABASE_SETUP.md) - PostgreSQL & EF Core
 
 ## Project Structure
 
 ```
 TaskFlow/
-├── TaskFlow.API/          # Web API layer
-├── TaskFlow.Application/  # Business logic layer
-├── TaskFlow.Domain/       # Domain entities
-├── TaskFlow.Infrastructure/ # Database configuration
-├── TaskFlow.UnitTests/    # Unit tests
-├── frontend/              # React frontend
-├── docs/                  # Documentation
-├── docker-compose.yml    # Docker configuration
-└── .env                  # Environment variables
+├── TaskFlow.API/               # Minimal API endpoints, middleware, Program.cs
+├── TaskFlow.Application/       # Services (CartService, OrderService, CheckoutService), DTOs, repository interfaces
+├── TaskFlow.Domain/            # Entities, constants
+├── TaskFlow.Infrastructure/    # EF Core DbContext, repositories, Stripe/Resend services, migrations
+├── TaskFlow.UnitTests/         # Moq/xUnit unit tests (Checkout, Domain, Services)
+├── TaskFlow.IntegrationTests/  # Testcontainers PostgreSQL integration tests
+├── frontend/                   # React + Vite storefront & admin
+├── docs/                       # Documentation
+├── scripts/                    # backup-db.sh / restore-db.sh
+├── Dockerfile.migrator         # ARM-aware EF migrations bundle
+└── docker-compose*.yml         # dev / prod / full-stack configurations
 ```
-
-## Quick Links
-
-- [Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md)
-- [Google Auth Setup](docs/GOOGLE_AUTH_SETUP.md)
-- [Database Setup](docs/DATABASE_SETUP.md)
-- [Docker Deployment](docs/DEPLOYMENT_DOCKER.md)
 
 ## License
 
 Proprietary - All rights reserved.
-
