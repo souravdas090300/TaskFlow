@@ -17,7 +17,7 @@ export const Navbar = () => {
             Shop
           </Link>
           <Link to="/cart" className="text-gray-700 hover:text-purple-600">
-            Cart ({items.length})
+            Cart ({items?.length || 0})
           </Link>
           {isAuthenticated ? (
             <>
