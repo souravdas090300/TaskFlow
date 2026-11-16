@@ -169,6 +169,12 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.Zero
     };
+})
+// Add Google Authentication Here:
+.AddGoogle(options =>
+{
+    options.ClientId = builder.Configuration["GOOGLE_CLIENT_ID"] ?? "";
+    options.ClientSecret = builder.Configuration["GOOGLE_CLIENT_SECRET"] ?? "";
 });
 
 builder.Services.AddAuthorization();
