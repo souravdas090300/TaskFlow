@@ -14,6 +14,9 @@ env:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout Source Code
@@ -80,34 +83,35 @@ jobs:
         script: |
           set -e
 
-          # Navigate to deployment directory
-          cd /home/${{ secrets.VPS_USERNAME }}/taskflow || exit 1
+          # 1. Navigate to the correct deployment directory (Capital T)
+          cd /home/${{ secrets.VPS_USERNAME }}/TaskFlow || exit 1
 
-          # Pull latest docker-compose.prod.yml from repository
+          # 2. Pull latest code to get the updated docker-compose.yml
           git pull origin main || echo "Git pull skipped or already up to date"
 
-          # Login to GitHub Container Registry
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          # 3. Login to GitHub Container Registry
+          echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-          # Set environment variables
-          echo "DOCKER_IMAGE_API=${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest" >> .env
-          echo "DOCKER_IMAGE_FRONTEND=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:latest" >> .env
-          echo "DB_PASSWORD=${{ secrets.DB_PASSWORD }}" >> .env
-          echo "GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}" >> .env
-          echo "GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}" >> .env
-          echo "DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}" >> .env
-          echo "DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}" >> .env
+          # 4. Set environment variables dynamically without duplicating them
+          # This creates a clean .env file every time
+          cat << EOF > .env
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
+          DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
+          ASPNETCORE_ENVIRONMENT=Development
+          DOCKER_IMAGE_API=${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest
+          DOCKER_IMAGE_FRONTEND=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:latest
+          EOF
 
-          # Pull new images
-          docker compose -f docker-compose.prod.yml pull
+          # 5. Pull new images
+          sudo docker compose pull
 
-          # Restart services
-          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          # 6. Restart services (The migrator container handles migrations automatically)
+          sudo docker compose up -d --remove-orphans
 
-          # Run database migrations
-          docker compose -f docker-compose.prod.yml exec -T api dotnet ef database update
-
-          # Clean up old images
-          docker image prune -f
+          # 7. Clean up old images to save disk space
+          sudo docker image prune -f
 
           echo "Deployment completed successfully!"
