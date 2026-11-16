@@ -22,6 +22,9 @@ RUN dotnet publish "TaskFlow.API.csproj" -c Release -o /app/publish /p:UseAppHos
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-USER $APP_UID
+
+# The base image already has the 'app' user
+USER app
 EXPOSE 80
+
 ENTRYPOINT ["dotnet", "TaskFlow.API.dll"]

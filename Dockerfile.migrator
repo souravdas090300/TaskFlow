@@ -21,6 +21,8 @@ RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
 WORKDIR /app
 COPY --from=build /out/efbundle .
-RUN groupadd -r app && useradd -r -g app app
+
+# The base image already has the 'app' user, so we just switch to it
 USER app
+
 ENTRYPOINT ["sh", "-c", "./efbundle --connection \"$ConnectionStrings__DefaultConnection\""]
