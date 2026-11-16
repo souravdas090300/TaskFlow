@@ -3,9 +3,7 @@ version: '3.8'
 services:
   # 1. TaskFlow API (.NET Application)
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE_API}
     container_name: taskflow-api
     env_file:
       - .env
@@ -28,9 +26,7 @@ services:
 
   # 1b. Database migrator (runs EF migrations bundle once, then exits)
   migrator:
-    build:
-      context: .
-      dockerfile: Dockerfile.migrator
+    image: ${DOCKER_IMAGE_MIGRATOR}
     container_name: taskflow-migrator
     environment:
       - ConnectionStrings__DefaultConnection=Host=db;Port=5432;Database=${DB_NAME:-taskflow};Username=${DB_USER:-taskflow};Password=${DB_PASSWORD}
@@ -43,14 +39,7 @@ services:
 
   # 2. TaskFlow Frontend (React + Nginx)
   frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-      args:
-        # Empty VITE_API_URL -> same-origin /api calls via nginx proxy (production).
-        # Set VITE_API_URL in .env to override (e.g. http://localhost:5000 for dev).
-        VITE_API_URL: ${VITE_API_URL:-}
-        VITE_STRIPE_PUBLISHABLE_KEY: ${VITE_STRIPE_PUBLISHABLE_KEY:-}
+    image: ${DOCKER_IMAGE_FRONTEND}
     container_name: taskflow-frontend
     expose:
       - "80"
