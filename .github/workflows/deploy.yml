@@ -92,10 +92,13 @@ jobs:
         script: |
           set -e
           cd /home/${{ secrets.VPS_USERNAME }}/TaskFlow || exit 1
-          git pull origin main || echo "Git pull skipped or already up to date"
-
+          
+          # Force sync with GitHub to overwrite any manual edits on the server
+          git fetch origin main
+          git reset --hard origin/main
+          
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
+          
           cat << EOF > .env
           DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
@@ -103,10 +106,10 @@ jobs:
           DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
           DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
           ASPNETCORE_ENVIRONMENT=Development
-          DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
-          DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
+          DOCKER_IMAGE_API=ghcr.io/souravdas090300/taskflow/taskflow-api:latest
+          DOCKER_IMAGE_FRONTEND=ghcr.io/souravdas090300/taskflow/taskflow-frontend:latest
           EOF
-
+          
           sudo docker compose pull
           sudo docker compose up -d --remove-orphans
           sudo docker image prune -f
