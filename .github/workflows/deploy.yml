@@ -103,8 +103,8 @@ jobs:
           DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
           DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
           ASPNETCORE_ENVIRONMENT=Development
-          DOCKER_IMAGE_API=${{ env.REGISTRY }}/${{ env.IMAGE_API }}:latest
-          DOCKER_IMAGE_FRONTEND=${{ env.REGISTRY }}/${{ env.IMAGE_FRONTEND }}:latest
+          DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
+          DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
           EOF
 
           sudo docker compose pull
