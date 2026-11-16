@@ -41,7 +41,7 @@ Deployed on an Oracle Cloud VM behind **Nginx Proxy Manager** with **DuckDNS** (
 
 ```powershell
 # From Windows - upload the project to the server
-ssh -i "C:\Users\dasau\ssh-key-2026-11-15.key" ubuntu@92.5.144.125 -r C:\dev\TaskFlow ubuntu@92.5.144.125:~/TaskFlow
+scp -i "C:\Users\dasau\ssh-key-2026-11-15.key" -r C:\dev\TaskFlow ubuntu@92.5.144.125:~/TaskFlow
 ```
 
 ```bash

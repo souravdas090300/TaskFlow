@@ -111,6 +111,7 @@ jobs:
           EOF
           
           sudo docker compose pull
+          sudo docker compose build migrator
           sudo docker compose up -d --remove-orphans
           sudo docker image prune -f
           echo "Deployment completed successfully!"

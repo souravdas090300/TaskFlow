@@ -3,9 +3,14 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG TARGETARCH
 WORKDIR /src
+
+# Copy the central package management file first so .NET knows the versions
+COPY ["Directory.Packages.props", "./"]
+
 COPY . .
 RUN dotnet tool install --global dotnet-ef --version "10.*"
 ENV PATH="${PATH}:/root/.dotnet/tools"
+RUN dotnet restore TaskFlow.API/TaskFlow.API.csproj
 RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
  && dotnet ef migrations bundle \
       --project TaskFlow.Infrastructure \
@@ -16,4 +21,6 @@ RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
 WORKDIR /app
 COPY --from=build /out/efbundle .
+RUN groupadd -r app && useradd -r -g app app
+USER app
 ENTRYPOINT ["sh", "-c", "./efbundle --connection \"$ConnectionStrings__DefaultConnection\""]
