@@ -28,7 +28,7 @@ client.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      window.location.href = '/admin/login';
     }
     return Promise.reject(error);
   }
@@ -70,6 +70,25 @@ export const adminApi = {
     });
     return response.data;
   },
+
+  getPaymentIssues: async (): Promise<PaymentIssue[]> => {
+    const response = await client.get('/api/admin/payment-issues');
+    return response.data;
+  },
+
+  resolvePaymentIssue: async (id: string, note: string): Promise<void> => {
+    await client.post(`/api/admin/payment-issues/${id}/resolve`, { note });
+  },
 };
+
+export interface PaymentIssue {
+  id: string;
+  orderId?: string;
+  orderNumber?: string;
+  paymentIntentId: string;
+  type: 'OrderNotFound' | 'OrderClosed' | 'DoubleCharge' | 'StockConflict' | string;
+  details: string;
+  createdAt: string;
+}
 
 export default client;

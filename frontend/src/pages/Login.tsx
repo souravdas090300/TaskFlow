@@ -12,7 +12,8 @@ export const Login = () => {
     e.preventDefault();
     try {
       await login(email, password);
-      navigate('/');
+      const user = useAuthStore.getState().user;
+      navigate(user?.role === 'Admin' ? '/admin' : '/');
     } catch (error) {
       alert('Login failed');
     }

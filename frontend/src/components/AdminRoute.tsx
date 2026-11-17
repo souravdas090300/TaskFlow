@@ -2,16 +2,14 @@ import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 
 export function AdminRoute({ children }: { children: React.ReactNode }) {
-  const user = useAuthStore((state) => state.user);
+  const { user, isAuthenticated } = useAuthStore();
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/admin/login" replace />;
   }
 
-  // Check if user has Admin role (this is a simple check - in production, validate on backend)
-  const isAdmin = user.role === 'Admin';
-
-  if (!isAdmin) {
+  // Client-side UX gate only — every /api/admin/* endpoint enforces the Admin role on the backend.
+  if (user.role !== 'Admin') {
     return <Navigate to="/" replace />;
   }
 

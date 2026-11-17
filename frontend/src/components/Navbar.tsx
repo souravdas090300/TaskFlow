@@ -9,8 +9,11 @@ export const Navbar = () => {
   return (
     <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-white/10">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <Link to="/" className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
-          TaskFlow
+        <Link to="/" className="flex items-center gap-2.5">
+          <img src="/brand/logo-tight.png" alt="TaskFlow" className="h-7 w-auto object-contain opacity-80" />
+          <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
+            TaskFlow
+          </span>
         </Link>
         <div className="flex items-center gap-6">
           <Link to="/shop" className="text-slate-300 hover:text-purple-400 transition">
