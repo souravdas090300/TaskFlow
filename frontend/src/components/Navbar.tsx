@@ -7,34 +7,39 @@ export const Navbar = () => {
   const { items } = useCartStore((state: any) => state.items);
 
   return (
-    <nav className="bg-white shadow-md">
+    <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-white/10">
       <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-        <Link to="/" className="text-2xl font-bold text-purple-600">
+        <Link to="/" className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
           TaskFlow
         </Link>
         <div className="flex items-center gap-6">
-          <Link to="/shop" className="text-gray-700 hover:text-purple-600">
+          <Link to="/shop" className="text-slate-300 hover:text-purple-400 transition">
             Shop
           </Link>
-          <Link to="/cart" className="text-gray-700 hover:text-purple-600">
-            Cart ({items?.length || 0})
+          <Link to="/cart" className="text-slate-300 hover:text-purple-400 transition relative">
+            Cart
+            {(items?.length || 0) > 0 && (
+              <span className="absolute -top-2 -right-4 bg-purple-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                {items.length}
+              </span>
+            )}
           </Link>
           {isAuthenticated ? (
             <>
-              <Link to="/orders" className="text-gray-700 hover:text-purple-600">
+              <Link to="/orders" className="text-slate-300 hover:text-purple-400 transition">
                 Orders
               </Link>
-              <span className="text-gray-700">Hello, {user?.firstName}</span>
+              <span className="text-slate-400">Hello, {user?.firstName}</span>
               <button
                 onClick={logout}
-                className="text-purple-600 hover:text-purple-800 font-semibold"
+                className="text-purple-400 hover:text-purple-300 font-semibold transition"
               >
                 Logout
               </button>
             </>
           ) : (
             <>
-              <Link to="/login" className="text-purple-600 hover:text-purple-800 font-semibold">
+              <Link to="/login" className="text-purple-400 hover:text-purple-300 font-semibold">
                 Login
               </Link>
               <Link

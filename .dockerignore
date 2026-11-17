@@ -32,6 +32,17 @@ AUDIT_REPORT.md
 *.swp
 *.swo
 
+
+# Secrets — never bake credentials into image layers
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*.p12
+**/*.pfx
+**/secrets/
+**/credentials/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
