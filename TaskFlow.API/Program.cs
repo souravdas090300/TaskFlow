@@ -175,7 +175,15 @@ builder.Services.AddAuthentication(options =>
 {
     options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "";
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "";
-    options.CallbackPath = "/signin-google"; // Ensure this matches Google Console exactly
+    
+    // This forces the app to use the exact URL Google expects
+    options.CallbackPath = "/signin-google";
+    options.Events.OnRedirectToAuthorizationEndpoint = context =>
+    {
+        var redirectUri = "https://taskflow-das.duckdns.org/signin-google";
+        context.RedirectUri = context.RedirectUri.Replace("http://", "https://").Replace("taskflow-api:80", "taskflow-das.duckdns.org");
+        return Task.CompletedTask;
+    };
 });
 
 builder.Services.AddAuthorization();
