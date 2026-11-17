@@ -50,10 +50,37 @@ public class ChangePasswordDto
     public string NewPassword { get; set; } = string.Empty;
 }
 
+public class ForgotPasswordDto
+{
+    [Required]
+    [EmailAddress]
+    [MaxLength(255)]
+    public string Email { get; set; } = string.Empty;
+}
+
+public class ResetPasswordDto
+{
+    [Required]
+    public string Token { get; set; } = string.Empty;
+
+    [Required]
+    [MinLength(8, ErrorMessage = "Password must be at least 8 characters")]
+    [MaxLength(100)]
+    public string Password { get; set; } = string.Empty;
+}
+
+public class RefreshTokenRequestDto
+{
+    [Required]
+    public string RefreshToken { get; set; } = string.Empty;
+}
+
 public class AuthResponseDto
 {
     public string Token { get; set; } = string.Empty;
     public DateTime Expiration { get; set; }
+    public string RefreshToken { get; set; } = string.Empty;
+    public DateTime RefreshTokenExpiresAt { get; set; }
     public UserDto User { get; set; } = new();
 }
 

@@ -6,6 +6,9 @@ public class OrderSettings
     public decimal FreeShippingThreshold { get; set; } = 50.00m;
     public decimal ShippingCost { get; set; } = 5.99m;
     public string Currency { get; set; } = "EUR";
+
+    /// <summary>Optional admin inbox that gets alerted when a payment issue is created.</summary>
+    public string? AdminAlertEmail { get; set; }
 }
 
 public static class OrderPricing

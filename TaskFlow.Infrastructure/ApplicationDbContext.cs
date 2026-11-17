@@ -28,6 +28,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<WishlistItem> WishlistItems { get; set; } = null!;
     public DbSet<ProcessedWebhookEvent> ProcessedWebhookEvents { get; set; } = null!;
     public DbSet<PaymentIssue> PaymentIssues { get; set; } = null!;
+    public DbSet<AuthToken> AuthTokens { get; set; } = null!;
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -233,6 +234,20 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             entity.Property(e => e.OrderNumber).HasMaxLength(100);
             entity.Property(e => e.Details).HasMaxLength(1000);
             entity.Property(e => e.ResolutionNote).HasMaxLength(500);
+        });
+
+        // AuthToken configuration
+        modelBuilder.Entity<AuthToken>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.HasIndex(e => new { e.UserId, e.Purpose });
+            entity.HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(e => e.Purpose).HasConversion<string>().HasMaxLength(20);
+            entity.Property(e => e.TokenHash).HasMaxLength(128);
         });
     }
 }

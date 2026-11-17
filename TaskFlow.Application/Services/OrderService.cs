@@ -16,17 +16,20 @@ public class OrderService
     private readonly IApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
+    private readonly IPaymentGateway _paymentGateway;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
         IApplicationDbContext context,
         IConfiguration configuration,
         IEmailService emailService,
+        IPaymentGateway paymentGateway,
         ILogger<OrderService> logger)
     {
         _context = context;
         _configuration = configuration;
         _emailService = emailService;
+        _paymentGateway = paymentGateway;
         _logger = logger;
     }
 
@@ -198,25 +201,100 @@ public class OrderService
         if (order.Status == ShippedStatus || order.Status == "Delivered")
             return false;
 
+        // Orders paid at Stripe (Paid or stuck in PaymentReview) must be refunded before cancelling
+        var paidAtStripe = order.PaymentMethod == "Stripe" && !string.IsNullOrEmpty(order.StripePaymentIntentId)
+            && order.Status is "Paid" or "PaymentReview";
+        if (paidAtStripe)
+        {
+            var refund = await _paymentGateway.RefundPaymentAsync(order.StripePaymentIntentId!);
+            if (!refund.Ok)
+            {
+                _logger.LogError(
+                    "Failed to refund order {OrderNumber} (payment {PaymentIntent}): {Error}. Order left uncancelled.",
+                    order.OrderNumber, order.StripePaymentIntentId, refund.Error);
+                return false;
+            }
+
+            _logger.LogInformation(
+                "Refunded order {OrderNumber}: refund {RefundId} for payment {PaymentIntent}",
+                order.OrderNumber, refund.RefundId, order.StripePaymentIntentId);
+        }
+
+        // Stock was reserved for Paid/Processing orders; PaymentReview rolled the decrement back
+        var restoreStock = order.Status is "Paid" or "Processing";
+
         order.Status = "Cancelled";
         order.CancelledAt = DateTime.UtcNow;
 
-        // Restore stock
-        var orderItems = await _context.OrderItems
-            .Where(oi => oi.OrderId == orderId)
-            .ToListAsync();
-
-        foreach (var item in orderItems)
+        if (restoreStock)
         {
-            var product = await _context.Products.FindAsync(item.ProductId);
-            if (product != null)
+            var orderItems = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId)
+                .ToListAsync();
+
+            foreach (var item in orderItems)
             {
-                product.Stock += item.Quantity;
+                var product = await _context.Products.FindAsync(item.ProductId);
+                if (product != null)
+                {
+                    product.Stock += item.Quantity;
+                }
             }
         }
 
         await _context.SaveChangesAsync();
         return true;
+    }
+
+    /// <summary>
+    /// Refunds a paid Stripe order in full and marks it Refunded.
+    /// Stock is restored only when it was actually reserved (Paid/Processing),
+    /// not for PaymentReview orders where the stock decrement was rolled back.
+    /// </summary>
+    public async Task<(bool Ok, string? Error)> RefundOrderAsync(Guid orderId)
+    {
+        var order = await _context.Orders.FindAsync(orderId);
+        if (order == null)
+            return (false, "Order not found");
+
+        if (order.PaymentMethod != "Stripe" || string.IsNullOrEmpty(order.StripePaymentIntentId))
+            return (false, "Order has no Stripe payment to refund");
+
+        if (order.Status is not ("Paid" or "Processing" or "PaymentReview"))
+            return (false, $"Order in status '{order.Status}' cannot be refunded");
+
+        var refund = await _paymentGateway.RefundPaymentAsync(order.StripePaymentIntentId);
+        if (!refund.Ok)
+        {
+            _logger.LogError(
+                "Stripe refund failed for order {OrderNumber} (payment {PaymentIntent}): {Error}",
+                order.OrderNumber, order.StripePaymentIntentId, refund.Error);
+            return (false, refund.Error ?? "Refund failed");
+        }
+
+        var restoreStock = order.Status is "Paid" or "Processing";
+        order.Status = "Refunded";
+
+        if (restoreStock)
+        {
+            var orderItems = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId)
+                .ToListAsync();
+
+            foreach (var item in orderItems)
+            {
+                var product = await _context.Products.FindAsync(item.ProductId);
+                if (product != null)
+                    product.Stock += item.Quantity;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation(
+            "Order {OrderNumber} refunded: refund {RefundId} for payment {PaymentIntent}",
+            order.OrderNumber, refund.RefundId, order.StripePaymentIntentId);
+        return (true, null);
     }
 
     public async Task<List<OrderDto>> GetAllOrdersAsync()

@@ -540,6 +540,59 @@ app.MapPost("/api/auth/change-password", async (HttpContext context, ChangePassw
     .WithName("ChangePassword")
     .RequireAuthorization();
 
+// Refresh access token using a refresh token
+app.MapPost("/api/auth/refresh", async (RefreshTokenRequestDto dto, AuthService authService) =>
+{
+    var result = await authService.RefreshAsync(dto.RefreshToken);
+    return result == null ? Results.Unauthorized() : Results.Ok(result);
+})
+    .WithName("RefreshToken")
+    .AllowAnonymous();
+
+// Logout: revoke the refresh token
+app.MapPost("/api/auth/logout", async (HttpContext context, AuthService authService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim != null && Guid.TryParse(userIdClaim, out var userId))
+    {
+        await authService.RevokeRefreshTokenAsync(userId);
+    }
+    return Results.Ok(new { message = "Logged out" });
+})
+    .WithName("Logout")
+    .RequireAuthorization();
+
+// Request a password reset email (always returns 200 to avoid user enumeration)
+app.MapPost("/api/auth/forgot-password", async (ForgotPasswordDto dto, AuthService authService) =>
+{
+    await authService.RequestPasswordResetAsync(dto.Email);
+    return Results.Ok(new { message = "If that email is registered, a reset link has been sent." });
+})
+    .WithName("ForgotPassword")
+    .AllowAnonymous();
+
+// Reset password using the emailed token
+app.MapPost("/api/auth/reset-password", async (ResetPasswordDto dto, AuthService authService) =>
+{
+    var success = await authService.ResetPasswordAsync(dto.Token, dto.Password);
+    return success
+        ? Results.Ok(new { message = "Password reset successfully" })
+        : Results.BadRequest(new { error = "Invalid or expired reset link" });
+})
+    .WithName("ResetPassword")
+    .AllowAnonymous();
+
+// Verify email using the emailed token
+app.MapGet("/api/auth/verify-email", async (string token, AuthService authService) =>
+{
+    var success = await authService.VerifyEmailAsync(token);
+    return success
+        ? Results.Ok(new { message = "Email verified successfully" })
+        : Results.BadRequest(new { error = "Invalid or expired verification link" });
+})
+    .WithName("VerifyEmail")
+    .AllowAnonymous();
+
 // ============ CART ENDPOINTS ============
 
 // Get cart
@@ -873,6 +926,19 @@ app.MapPut("/api/admin/orders/{id}/tracking", async (Guid id, string trackingNum
     return success ? Results.Ok(new { message = "Tracking updated" }) : Results.NotFound();
 })
     .WithName("UpdateOrderTracking")
+    .RequireAuthorization(policy => policy.RequireRole(AdminRole));
+
+// Admin: Refund a paid Stripe order
+app.MapPost("/api/admin/orders/{id}/refund", async (Guid id, OrderService orderService) =>
+{
+    var (ok, error) = await orderService.RefundOrderAsync(id);
+    return ok
+        ? Results.Ok(new { message = "Order refunded" })
+        : error == "Order not found"
+            ? Results.NotFound()
+            : Results.BadRequest(new { error });
+})
+    .WithName("RefundOrder")
     .RequireAuthorization(policy => policy.RequireRole(AdminRole));
 
 // Admin: Get dashboard statistics

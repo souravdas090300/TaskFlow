@@ -93,6 +93,25 @@ public class StripePaymentGateway : IPaymentGateway
         }
     }
 
+    public async Task<(bool Ok, string? RefundId, string? Error)> RefundPaymentAsync(string paymentIntentId)
+    {
+        try
+        {
+            var refund = await new RefundService().CreateAsync(new RefundCreateOptions
+            {
+                PaymentIntent = paymentIntentId
+            });
+
+            return refund.Status is "succeeded" or "pending"
+                ? (true, refund.Id, null)
+                : (false, null, $"Refund status: {refund.Status}");
+        }
+        catch (StripeException e)
+        {
+            return (false, null, e.Message);
+        }
+    }
+
     private static string? GetMeta(IDictionary<string, string?>? metadata, string key)
         => metadata != null && metadata.TryGetValue(key, out var value) ? value : null;
 }

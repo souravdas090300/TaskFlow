@@ -58,6 +58,19 @@ public class PaymentIssueTests : CheckoutTestBase
     }
 
     [Fact]
+    public async Task StockConflict_SendsPaymentReviewEmailToCustomer()
+    {
+        GivenOrder(MakeOrder());
+        Events.Setup(e => e.TryMarkProcessedAsync(EventId)).ReturnsAsync(true);
+        Orders.Setup(o => o.TryMarkPaidAsync(OrderId, Pi, EventId, It.IsAny<DateTime>())).ReturnsAsync(true);
+        Stock.Setup(s => s.TryDecrementAsync(It.IsAny<Guid>(), It.IsAny<int>())).ReturnsAsync(false);
+
+        (await CreateSut().ProcessStripePaymentAsync(OrderId, Pi, EventId)).Should().Be(PaymentResult.StockConflict);
+
+        Email.Verify(e => e.SendPaymentReviewEmailAsync("jane@example.com", "Jane Doe", "ORD-TEST"), Times.Once);
+    }
+
+    [Fact]
     public async Task SuccessfulPayment_RecordsNoIssue()
     {
         GivenOrder(MakeOrder());

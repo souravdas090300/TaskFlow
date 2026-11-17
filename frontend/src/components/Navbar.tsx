@@ -1,10 +1,13 @@
 import { useAuthStore } from '../store/useAuthStore';
 import { useCartStore } from '../store/useCartStore';
+import { useGuestCartStore } from '../store/useGuestCartStore';
 import { Link } from 'react-router-dom';
 
 export const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuthStore();
   const { items } = useCartStore((state: any) => state.items);
+  const guestCount = useGuestCartStore((state) => state.totalItems());
+  const cartCount = isAuthenticated ? (items?.length || 0) : guestCount;
 
   return (
     <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-white/10">
@@ -21,9 +24,9 @@ export const Navbar = () => {
           </Link>
           <Link to="/cart" className="text-slate-300 hover:text-purple-400 transition relative">
             Cart
-            {(items?.length || 0) > 0 && (
+            {cartCount > 0 && (
               <span className="absolute -top-2 -right-4 bg-purple-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
-                {items.length}
+                {cartCount}
               </span>
             )}
           </Link>

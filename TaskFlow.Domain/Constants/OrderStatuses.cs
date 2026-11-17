@@ -9,6 +9,7 @@ public static class OrderStatuses
     public const string Delivered = "Delivered";
     public const string Cancelled = "Cancelled";
     public const string PaymentReview = "PaymentReview";
+    public const string Refunded = "Refunded";
 }
 
 public static class PaymentMethodNames

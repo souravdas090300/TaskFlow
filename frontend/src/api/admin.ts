@@ -79,6 +79,10 @@ export const adminApi = {
   resolvePaymentIssue: async (id: string, note: string): Promise<void> => {
     await client.post(`/api/admin/payment-issues/${id}/resolve`, { note });
   },
+
+  refundOrder: async (orderId: string): Promise<void> => {
+    await client.post(`/api/admin/orders/${orderId}/refund`);
+  },
 };
 
 export interface PaymentIssue {

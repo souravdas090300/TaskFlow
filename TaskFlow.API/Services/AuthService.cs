@@ -1,9 +1,12 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using TaskFlow.Application.DTOs;
+using TaskFlow.Application.Services;
 using TaskFlow.Domain.Entities;
 using TaskFlow.Infrastructure;
 
@@ -13,11 +16,16 @@ public class AuthService
 {
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly IEmailService _email;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(ApplicationDbContext context, IConfiguration configuration)
+    public AuthService(ApplicationDbContext context, IConfiguration configuration,
+        IEmailService email, ILogger<AuthService> logger)
     {
         _context = context;
         _configuration = configuration;
+        _email = email;
+        _logger = logger;
     }
 
     public async Task<AuthResponseDto?> RegisterAsync(RegisterDto dto)
@@ -51,13 +59,17 @@ public class AuthService
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
 
-        // Generate JWT token
-        var token = GenerateJwtToken(user);
+        await TrySendVerificationEmailAsync(user);
+
+        // Generate tokens (JWT + refresh)
+        var (token, expiration, refreshToken, refreshExpiry) = await IssueTokensAsync(user);
 
         return new AuthResponseDto
         {
             Token = token,
-            Expiration = DateTime.UtcNow.AddHours(24),
+            Expiration = expiration,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAt = refreshExpiry,
             User = MapToUserDto(user)
         };
     }
@@ -82,15 +94,50 @@ public class AuthService
             return null;
         }
 
-        // Generate JWT token
-        var token = GenerateJwtToken(user);
+        // Generate tokens (JWT + refresh)
+        var (token, expiration, refreshToken, refreshExpiry) = await IssueTokensAsync(user);
 
         return new AuthResponseDto
         {
             Token = token,
-            Expiration = DateTime.UtcNow.AddHours(24),
+            Expiration = expiration,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAt = refreshExpiry,
             User = MapToUserDto(user)
         };
+    }
+
+    /// <summary>
+    /// Exchanges a valid refresh token for a new JWT + rotated refresh token.
+    /// The old refresh token is invalidated (rotation).
+    /// </summary>
+    public async Task<AuthResponseDto?> RefreshAsync(string rawRefreshToken)
+    {
+        var hash = HashToken(rawRefreshToken);
+        var user = await _context.Users.FirstOrDefaultAsync(u =>
+            u.RefreshToken == hash && u.RefreshTokenExpiry > DateTime.UtcNow && u.IsActive);
+        if (user is null) return null;
+
+        var (token, expiration, refreshToken, refreshExpiry) = await IssueTokensAsync(user);
+
+        return new AuthResponseDto
+        {
+            Token = token,
+            Expiration = expiration,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAt = refreshExpiry,
+            User = MapToUserDto(user)
+        };
+    }
+
+    /// <summary>Revokes the user's refresh token (logout).</summary>
+    public async Task RevokeRefreshTokenAsync(Guid userId)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user is null) return;
+        user.RefreshToken = null;
+        user.RefreshTokenExpiry = null;
+        await _context.SaveChangesAsync();
     }
 
     public async Task<UserDto?> GetUserByIdAsync(Guid userId)
@@ -134,6 +181,136 @@ public class AuthService
 
         return true;
     }
+
+    /// <summary>
+    /// Always succeeds silently for unknown emails to avoid user enumeration.
+    /// </summary>
+    public async Task RequestPasswordResetAsync(string email)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user?.PasswordHash is null) return;
+
+        var token = await CreateAuthTokenAsync(user.Id, AuthTokenPurpose.ResetPassword, TimeSpan.FromHours(1));
+        var url = $"{PublicUrl()}/reset-password?token={Uri.EscapeDataString(token)}";
+
+        try
+        {
+            await _email.SendPasswordResetEmailAsync(user.Email, $"{user.FirstName} {user.LastName}", url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send password reset email to {Email}", user.Email);
+        }
+    }
+
+    public async Task<bool> ResetPasswordAsync(string token, string newPassword)
+    {
+        var authToken = await FindValidTokenAsync(token, AuthTokenPurpose.ResetPassword);
+        if (authToken is null) return false;
+
+        var user = await _context.Users.FindAsync(authToken.UserId);
+        if (user is null) return false;
+
+        user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        authToken.UsedAt = DateTime.UtcNow;
+
+        // Invalidate any other outstanding tokens for this user
+        var others = await _context.AuthTokens
+            .Where(t => t.UserId == user.Id && t.UsedAt == null)
+            .ToListAsync();
+        foreach (var other in others)
+            other.UsedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> VerifyEmailAsync(string token)
+    {
+        var authToken = await FindValidTokenAsync(token, AuthTokenPurpose.VerifyEmail);
+        if (authToken is null) return false;
+
+        var user = await _context.Users.FindAsync(authToken.UserId);
+        if (user is null) return false;
+
+        user.EmailVerified = true;
+        user.IsEmailVerified = true;
+        user.EmailVerifiedAt = DateTime.UtcNow;
+        authToken.UsedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task TrySendVerificationEmailAsync(User user)
+    {
+        try
+        {
+            var token = await CreateAuthTokenAsync(user.Id, AuthTokenPurpose.VerifyEmail, TimeSpan.FromDays(2));
+            var url = $"{PublicUrl()}/verify-email?token={Uri.EscapeDataString(token)}";
+            await _email.SendEmailVerificationEmailAsync(user.Email, $"{user.FirstName} {user.LastName}", url);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send verification email to {Email}", user.Email);
+        }
+    }
+
+    private async Task<AuthToken?> FindValidTokenAsync(string rawToken, AuthTokenPurpose purpose)
+    {
+        var hash = HashToken(rawToken);
+        return await _context.AuthTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == hash
+                && t.Purpose == purpose
+                && t.UsedAt == null
+                && t.ExpiresAt > DateTime.UtcNow);
+    }
+
+    private async Task<string> CreateAuthTokenAsync(Guid userId, AuthTokenPurpose purpose, TimeSpan lifetime)
+    {
+        var raw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+        _context.AuthTokens.Add(new AuthToken
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            TokenHash = HashToken(raw),
+            Purpose = purpose,
+            ExpiresAt = DateTime.UtcNow.Add(lifetime)
+        });
+        await _context.SaveChangesAsync();
+        return raw;
+    }
+
+    private static readonly TimeSpan RefreshTokenLifetime = TimeSpan.FromDays(14);
+
+    private async Task<(string Token, DateTime Expires, string RefreshToken, DateTime RefreshExpires)>
+        IssueTokensAsync(User user)
+    {
+        var refreshToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+        var refreshExpires = DateTime.UtcNow.Add(RefreshTokenLifetime);
+
+        // Only the hash is stored; the raw token is returned once to the client
+        user.RefreshToken = HashToken(refreshToken);
+        user.RefreshTokenExpiry = refreshExpires;
+        user.LastLoginAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        var token = GenerateJwtToken(user);
+        return (token, DateTime.UtcNow.AddHours(24), refreshToken, refreshExpires);
+    }
+
+    private static string HashToken(string rawToken)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawToken));
+        return Convert.ToHexString(bytes);
+    }
+
+    private string PublicUrl() =>
+        _configuration["App:PublicUrl"] ?? "http://localhost:5173";
 
     private string GenerateJwtToken(User user)
     {

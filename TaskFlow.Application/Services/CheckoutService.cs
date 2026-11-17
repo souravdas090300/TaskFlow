@@ -100,7 +100,7 @@ public class CheckoutService
         if (order is null)
         {
             _logger.LogError("Stripe event {EventId}: order {OrderId} not found", eventId, orderId);
-            await _issues.AddIfNotExistsAsync(PaymentIssue.Create(null, null, paymentIntentId, eventId,
+            await RecordIssueAsync(PaymentIssue.Create(null, null, paymentIntentId, eventId,
                 PaymentIssueType.OrderNotFound, $"Stripe event referenced unknown order {orderId}", now));
             return PaymentResult.OrderNotFound;
         }
@@ -108,7 +108,7 @@ public class CheckoutService
         var rejection = GetRejection(order, paymentIntentId, eventId);
         if (rejection is not null)
         {
-            await _issues.AddIfNotExistsAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
+            await RecordIssueAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
                 rejection.Value.Type, rejection.Value.Details, now));
             return PaymentResult.Rejected;
         }
@@ -171,13 +171,15 @@ public class CheckoutService
             return PaymentResult.AlreadyProcessed;
 
         await _orders.MarkPaymentReviewAsync(order.Id, paymentIntentId);
-        await _issues.AddIfNotExistsAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
+        await RecordIssueAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
             PaymentIssueType.StockConflict, "Paid at Stripe but stock ran out. Refund or restock.", now));
         await tx.CommitAsync();
 
         _logger.LogError(
             "Order {OrderNumber} paid ({PaymentIntent}) but stock is insufficient. Flagged PaymentReview: refund or restock.",
             order.OrderNumber, paymentIntentId);
+
+        await TrySendPaymentReviewEmailAsync(order.UserId, order.OrderNumber);
         return PaymentResult.StockConflict;
     }
 
@@ -221,6 +223,32 @@ public class CheckoutService
 
     // ═══════════════════════ helpers ═══════════════════════
 
+    /// <summary>
+    /// Persists a payment issue, logs it, and alerts the configured admin inbox.
+    /// Never throws — alerting must not break webhook processing.
+    /// </summary>
+    private async Task RecordIssueAsync(PaymentIssue issue)
+    {
+        await _issues.AddIfNotExistsAsync(issue);
+
+        _logger.LogError(
+            "Payment issue {Type} recorded: order {OrderNumber}, payment {PaymentIntent}, event {EventId}. {Details}",
+            issue.Type, issue.OrderNumber, issue.PaymentIntentId, issue.EventId, issue.Details);
+
+        if (string.IsNullOrEmpty(_settings.AdminAlertEmail)) return;
+
+        try
+        {
+            await _email.SendPaymentIssueAlertEmailAsync(
+                _settings.AdminAlertEmail, issue.Type.ToString(), issue.OrderNumber,
+                issue.PaymentIntentId, issue.Details);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send payment issue alert for {OrderNumber}", issue.OrderNumber);
+        }
+    }
+
     private async Task<bool> TryReserveStockAsync(IEnumerable<OrderItem> items)
     {
         foreach (var item in items.OrderBy(i => i.ProductId))
@@ -242,6 +270,20 @@ public class CheckoutService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send order confirmation email for {OrderNumber}", orderNumber);
+        }
+    }
+
+    private async Task TrySendPaymentReviewEmailAsync(Guid userId, string orderNumber)
+    {
+        try
+        {
+            var contact = await _users.GetContactAsync(userId);
+            if (contact is null) return;
+            await _email.SendPaymentReviewEmailAsync(contact.Email, contact.FullName, orderNumber);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send payment review email for {OrderNumber}", orderNumber);
         }
     }
 }

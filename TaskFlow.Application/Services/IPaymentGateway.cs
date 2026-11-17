@@ -15,4 +15,10 @@ public interface IPaymentGateway
     /// Extracts payment details from a webhook event.
     /// </summary>
     (string? PaymentIntentId, Guid? OrderId) GetPaymentDetailsFromEvent(string jsonPayload, string sigHeader);
+
+    /// <summary>
+    /// Refunds a Stripe payment intent in full. Returns the refund id on success,
+    /// or an error message on failure.
+    /// </summary>
+    Task<(bool Ok, string? RefundId, string? Error)> RefundPaymentAsync(string paymentIntentId);
 }

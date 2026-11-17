@@ -20,16 +20,45 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor to handle errors
+let refreshPromise: Promise<void> | null = null;
+
+async function tryRefreshToken(): Promise<void> {
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) throw new Error('No refresh token');
+  const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, { refreshToken });
+  localStorage.setItem('token', response.data.token);
+  localStorage.setItem('refreshToken', response.data.refreshToken);
+  localStorage.setItem('user', JSON.stringify(response.data.user));
+}
+
+function clearAuthAndRedirect() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+}
+
+// Response interceptor: on 401, try one token refresh then retry the request once
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status !== 401 || originalRequest?._retried) {
+      if (error.response?.status === 401) clearAuthAndRedirect();
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+
+    originalRequest._retried = true;
+    try {
+      // Share one in-flight refresh across concurrent 401s
+      refreshPromise ??= tryRefreshToken().finally(() => { refreshPromise = null; });
+      await refreshPromise;
+      originalRequest.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
+      return api(originalRequest);
+    } catch {
+      clearAuthAndRedirect();
+      return Promise.reject(error);
+    }
   }
 );
 

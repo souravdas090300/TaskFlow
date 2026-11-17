@@ -54,6 +54,19 @@ public class ResendEmailService : IEmailService
         await SendAsync(email, $"Your order {orderNumber} has shipped", html, $"order-shipped-{orderNumber}-{trackingNumber}");
     }
 
+    public async Task SendPaymentReviewEmailAsync(string email, string name, string orderNumber)
+    {
+        var html = $"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+              <h2>We're reviewing your payment, {Enc(name)}.</h2>
+              <p>Your payment for order <strong>{Enc(orderNumber)}</strong> was received, but we're doing a quick review before dispatch.</p>
+              <p>No action is needed from you — we'll email you as soon as your order is confirmed or refunded.</p>
+              <p style="color:#6b7280;font-size:13px">Questions? Just reply to this email.</p>
+            </div>
+            """;
+        await SendAsync(email, $"We're reviewing your order {orderNumber}", html, $"payment-review-{orderNumber}");
+    }
+
     public async Task SendLowStockAlertEmailAsync(string adminEmail, string productName, int currentStock, int threshold)
     {
         var html = $"""
@@ -66,6 +79,46 @@ public class ResendEmailService : IEmailService
             </div>
             """;
         await SendAsync(adminEmail, $"Low stock alert: {productName}", html, $"low-stock-{productName}-{currentStock}");
+    }
+
+    public async Task SendEmailVerificationEmailAsync(string email, string name, string verificationUrl)
+    {
+        var html = $"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+              <h2>Welcome, {Enc(name)}!</h2>
+              <p>Please confirm your email address to finish setting up your TaskFlow account.</p>
+              <p><a href="{Enc(verificationUrl)}" style="display:inline-block;background:#7c3aed;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none">Verify my email</a></p>
+              <p style="color:#6b7280;font-size:13px">If you didn't create an account, you can ignore this email.</p>
+            </div>
+            """;
+        await SendAsync(email, "Verify your TaskFlow email", html, $"email-verify-{email}");
+    }
+
+    public async Task SendPasswordResetEmailAsync(string email, string name, string resetUrl)
+    {
+        var html = $"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+              <h2>Hi {Enc(name)},</h2>
+              <p>We received a request to reset your TaskFlow password.</p>
+              <p><a href="{Enc(resetUrl)}" style="display:inline-block;background:#7c3aed;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none">Reset my password</a></p>
+              <p style="color:#6b7280;font-size:13px">This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
+            </div>
+            """;
+        await SendAsync(email, "Reset your TaskFlow password", html, $"password-reset-{email}");
+    }
+
+    public async Task SendPaymentIssueAlertEmailAsync(string adminEmail, string issueType, string? orderNumber, string paymentIntentId, string details)
+    {
+        var html = $"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827">
+              <h2 style="color:#dc2626">Payment Issue: {Enc(issueType)}</h2>
+              <p>Order: <strong>{Enc(orderNumber ?? "unknown")}</strong></p>
+              <p>Payment intent: <strong>{Enc(paymentIntentId)}</strong></p>
+              <p>{Enc(details)}</p>
+              <p style="color:#6b7280;font-size:13px">Review it in the admin panel under Payment Issues.</p>
+            </div>
+            """;
+        await SendAsync(adminEmail, $"[TaskFlow] Payment issue: {issueType}", html, $"payment-issue-{issueType}-{paymentIntentId}");
     }
 
     private async Task SendAsync(string to, string subject, string html, string idempotencyKey)

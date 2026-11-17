@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authApi } from '../api/auth';
+import { mergeGuestCartIntoAccount } from './useGuestCartStore';
 import type { User } from '../api/auth';
 
 interface AuthState {
@@ -23,11 +24,13 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password) => {
         const data = await authApi.login({ email, password });
         set({ user: data.user, token: data.token, isAuthenticated: true });
+        void mergeGuestCartIntoAccount();
       },
 
       register: async (email, password, firstName, lastName) => {
         const data = await authApi.register({ email, password, firstName, lastName });
         set({ user: data.user, token: data.token, isAuthenticated: true });
+        void mergeGuestCartIntoAccount();
       },
 
       logout: () => {

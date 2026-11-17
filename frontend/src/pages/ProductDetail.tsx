@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { productsApi } from '../api/products';
 import { useCartStore } from '../store/useCartStore';
+import { useGuestCartStore } from '../store/useGuestCartStore';
+import { useAuthStore } from '../store/useAuthStore';
 
 export const ProductDetail = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -13,9 +15,18 @@ export const ProductDetail = () => {
   const addItem = useCartStore((state) => state.addItem);
 
   const addToCart = async () => {
-    if (product) {
+    if (!product) return;
+    if (useAuthStore.getState().isAuthenticated) {
       await addItem(product.id, 1);
       alert('Added to cart!');
+    } else {
+      useGuestCartStore.getState().addItem({
+        productId: product.id,
+        name: product.name,
+        price: product.price,
+        imageUrl: product.images[0]?.imageUrl,
+      });
+      alert('Added to cart! Log in to check out.');
     }
   };
 

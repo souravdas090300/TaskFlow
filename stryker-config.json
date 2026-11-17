@@ -1,16 +1,11 @@
 {
   "stryker-config": {
     "project": "TaskFlow.Application/TaskFlow.Application.csproj",
-    "reporters": {
-      "html": { "fileName": "reports/mutation/mutation.html" },
-      "progress": { "reportFile": "reports/mutation/mutation.progress" },
-      "json": { "fileName": "reports/mutation/mutation.json" }
-    },
+    "reporters": ["html", "progress", "json"],
     "mutate": [
       "Services/OrderSettings.cs"
     ],
     "concurrency": 4,
-    "timeoutMS": 30000,
     "thresholds": {
       "high": 80,
       "low": 60,

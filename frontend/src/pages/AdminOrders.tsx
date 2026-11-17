@@ -14,7 +14,7 @@ export default function AdminOrders() {
     mutationFn: ({ orderId, status }: { orderId: string; status: string }) =>
       adminApi.updateOrderStatus(orderId, status),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
     },
   });
 
@@ -22,11 +22,23 @@ export default function AdminOrders() {
     mutationFn: ({ orderId, trackingNumber }: { orderId: string; trackingNumber: string }) =>
       adminApi.updateOrderTracking(orderId, trackingNumber),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+    },
+  });
+
+  const refundMutation = useMutation({
+    mutationFn: (orderId: string) => adminApi.refundOrder(orderId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
     },
   });
 
   const [trackingInputs, setTrackingInputs] = useState<Record<string, string>>({});
+
+  const canRefund = (order: OrderDto) =>
+    order.paymentMethod === 'Stripe' &&
+    !!order.stripePaymentIntentId &&
+    ['Paid', 'Processing', 'PaymentReview'].includes(order.status);
 
   if (isLoading) return <div className="p-8">Loading orders...</div>;
   if (error) return <div className="p-8 text-red-600">Error loading orders</div>;
@@ -82,6 +94,8 @@ export default function AdminOrders() {
                     <option value="Shipped">Shipped</option>
                     <option value="Delivered">Delivered</option>
                     <option value="Cancelled">Cancelled</option>
+                    <option value="PaymentReview">Payment Review</option>
+                    <option value="Refunded">Refunded</option>
                   </select>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -105,6 +119,19 @@ export default function AdminOrders() {
                     >
                       Save
                     </button>
+                    {canRefund(order) && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Refund ${order.orderNumber} in full via Stripe?`)) {
+                            refundMutation.mutate(order.id);
+                          }
+                        }}
+                        className="text-sm bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700"
+                        disabled={refundMutation.isPending}
+                      >
+                        Refund
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
