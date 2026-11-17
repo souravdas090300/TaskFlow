@@ -11,32 +11,22 @@ namespace TaskFlow.Application.Services;
 
 public class OrderService
 {
-    private const string DateFormat = "MMMM dd, yyyy";
     private const string ShippedStatus = "Shipped";
 
     private readonly IApplicationDbContext _context;
     private readonly IConfiguration _configuration;
     private readonly IEmailService _emailService;
-    private readonly IOrderRepository _orderRepository;
-    private readonly IProcessedWebhookEventRepository _eventRepository;
-    private readonly IPaymentIssueRepository _paymentIssues;
     private readonly ILogger<OrderService> _logger;
 
     public OrderService(
         IApplicationDbContext context,
         IConfiguration configuration,
         IEmailService emailService,
-        IOrderRepository orderRepository,
-        IProcessedWebhookEventRepository eventRepository,
-        IPaymentIssueRepository paymentIssues,
         ILogger<OrderService> logger)
     {
         _context = context;
         _configuration = configuration;
         _emailService = emailService;
-        _orderRepository = orderRepository;
-        _eventRepository = eventRepository;
-        _paymentIssues = paymentIssues;
         _logger = logger;
     }
 
@@ -96,86 +86,6 @@ public class OrderService
             Total = total,
             Addresses = addresses
         };
-    }
-
-    public async Task<OrderDto?> CreateOrderAsync(Guid userId, CreateOrderDto dto)
-    {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
-
-        if (cart == null || !cart.Items.Any())
-            return null;
-
-        var shippingAddress = await _context.Addresses
-            .FirstOrDefaultAsync(a => a.Id == dto.ShippingAddressId && a.UserId == userId);
-
-        if (shippingAddress == null)
-            return null;
-
-        // Calculate totals server-side
-        var subtotal = cart.Items.Sum(i => i.UnitPrice * i.Quantity);
-        var taxRate = _configuration.GetValue<decimal>("OrderSettings:TaxRate");
-        var tax = subtotal * taxRate;
-        var freeShippingThreshold = _configuration.GetValue<decimal>("OrderSettings:FreeShippingThreshold");
-        var shippingCost = _configuration.GetValue<decimal>("OrderSettings:ShippingCost");
-        var shipping = subtotal >= freeShippingThreshold ? 0 : shippingCost;
-        var total = subtotal + tax + shipping;
-
-        // Generate order number
-        var orderNumber = $"ORD-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString().Substring(0, 8).ToUpper()}";
-
-        var order = new Order
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            OrderNumber = orderNumber,
-            Status = "Pending",
-            PaymentMethod = dto.PaymentMethod.ToString(),
-            Subtotal = subtotal,
-            Tax = tax,
-            ShippingCost = shipping,
-            Total = total,
-            CreatedAt = DateTime.UtcNow,
-            ConcurrencyToken = Guid.NewGuid()
-        };
-
-        _context.Orders.Add(order);
-
-        // Create order items with price snapshots
-        foreach (var cartItem in cart.Items)
-        {
-            var orderItem = new OrderItem
-            {
-                Id = Guid.NewGuid(),
-                OrderId = order.Id,
-                ProductId = cartItem.ProductId,
-                ProductName = cartItem.Product.Name,
-                ProductImageUrl = cartItem.Product.Images.FirstOrDefault()?.ImageUrl,
-                Quantity = cartItem.Quantity,
-                UnitPrice = cartItem.UnitPrice, // Price snapshot
-                TotalPrice = cartItem.UnitPrice * cartItem.Quantity
-            };
-            _context.OrderItems.Add(orderItem);
-        }
-
-        await _context.SaveChangesAsync();
-
-        // Send order confirmation email
-        var user = await _context.Users.FindAsync(userId);
-        if (user != null)
-        {
-            await _emailService.SendOrderConfirmationEmailAsync(
-                user.Email,
-                $"{user.FirstName} {user.LastName}",
-                orderNumber,
-                total,
-                DateTime.UtcNow.ToString(DateFormat)
-            );
-        }
-
-        return await GetOrderByIdAsync(userId, order.Id);
     }
 
     public async Task<OrderDto?> GetOrderByIdAsync(Guid userId, Guid orderId)
@@ -274,226 +184,6 @@ public class OrderService
         }
 
         return result;
-    }
-
-    public async Task<PaymentResult> ProcessStripePaymentAsync(Guid orderId, string paymentIntentId, string eventId)
-    {
-        var order = await _context.Orders.FindAsync(orderId);
-        if (order == null)
-        {
-            _logger.LogError("Stripe event {EventId}: order {OrderId} not found", eventId, orderId);
-            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(null, null, paymentIntentId, eventId,
-                PaymentIssueType.OrderNotFound, $"Stripe event referenced unknown order {orderId}", DateTime.UtcNow));
-            return PaymentResult.OrderNotFound;
-        }
-
-        var rejection = GetPaymentRejection(order, paymentIntentId, eventId);
-        if (rejection is not null)
-        {
-            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(order.Id, order.OrderNumber, paymentIntentId, eventId,
-                rejection.Value.Type, rejection.Value.Details, DateTime.UtcNow));
-            return PaymentResult.Rejected;
-        }
-
-        var paidAt = DateTime.UtcNow;
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
-        if (!await _eventRepository.TryMarkProcessedAsync(eventId))
-            return PaymentResult.AlreadyProcessed;
-
-        if (!await _orderRepository.TryMarkPaidAsync(orderId, paymentIntentId, eventId, paidAt))
-        {
-            await transaction.CommitAsync(); // Keep the event record
-            return PaymentResult.AlreadyProcessed;
-        }
-
-        var orderItems = await _context.OrderItems
-            .Where(oi => oi.OrderId == orderId)
-            .ToListAsync();
-
-        var stockOk = await TryDecrementStockAsync(orderItems);
-
-        if (stockOk)
-        {
-            await ClearCartAsync(order.UserId);
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-            await TrySendConfirmationEmailAsync(order, paidAt);
-            return PaymentResult.Processed;
-        }
-
-        await transaction.RollbackAsync();
-        await FlagPaymentReviewAsync(orderId, paymentIntentId, eventId, order.OrderNumber);
-        return PaymentResult.StockConflict;
-    }
-
-    private (PaymentIssueType Type, string Details)? GetPaymentRejection(Order order, string paymentIntentId, string eventId)
-    {
-        if (order.Status == "Paid" && order.StripePaymentIntentId != paymentIntentId)
-        {
-            _logger.LogError(
-                "Stripe event {EventId}: order {OrderNumber} already paid with DIFFERENT payment {OtherPayment}; {PaymentIntent} is a possible double charge. Refund needed.",
-                eventId, order.OrderNumber, order.StripePaymentIntentId, paymentIntentId);
-            return (PaymentIssueType.DoubleCharge,
-                $"Order already paid with {order.StripePaymentIntentId}; second payment {paymentIntentId} must be refunded.");
-        }
-
-        if (order.Status == "Cancelled" || order.Status == ShippedStatus || order.Status == "Delivered")
-        {
-            _logger.LogError(
-                "Stripe event {EventId}: payment {PaymentIntent} arrived for order {OrderNumber} in status {Status}. Refund may be needed.",
-                eventId, paymentIntentId, order.OrderNumber, order.Status);
-            return (PaymentIssueType.OrderClosed, $"Payment arrived for an order in status {order.Status}.");
-        }
-
-        return null;
-    }
-
-    private async Task<bool> TryDecrementStockAsync(List<OrderItem> orderItems)
-    {
-        foreach (var item in orderItems.OrderBy(i => i.ProductId))
-        {
-            var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
-                "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
-                item.Quantity, item.ProductId);
-
-            if (rowsAffected == 0)
-                return false;
-        }
-
-        return true;
-    }
-
-    private async Task ClearCartAsync(Guid userId)
-    {
-        var cart = await _context.Carts
-            .Include(c => c.Items)
-            .FirstOrDefaultAsync(c => c.UserId == userId);
-        if (cart != null)
-        {
-            _context.CartItems.RemoveRange(cart.Items);
-        }
-    }
-
-    private async Task TrySendConfirmationEmailAsync(Order order, DateTime paidAt)
-    {
-        var user = await _context.Users.FindAsync(order.UserId);
-        if (user != null)
-        {
-            try
-            {
-                await _emailService.SendOrderConfirmationEmailAsync(
-                    user.Email,
-                    $"{user.FirstName} {user.LastName}",
-                    order.OrderNumber,
-                    order.Total,
-                    paidAt.ToString(DateFormat)
-                );
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send order confirmation email for {OrderNumber}", order.OrderNumber);
-            }
-        }
-    }
-
-    private async Task FlagPaymentReviewAsync(Guid orderId, string paymentIntentId, string eventId, string orderNumber)
-    {
-        await using var reviewTransaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            if (!await _eventRepository.TryMarkProcessedAsync(eventId))
-                return;
-
-            await _orderRepository.MarkPaymentReviewAsync(orderId, paymentIntentId);
-            await _paymentIssues.AddIfNotExistsAsync(PaymentIssue.Create(orderId, orderNumber, paymentIntentId, eventId,
-                PaymentIssueType.StockConflict, "Paid at Stripe but stock ran out. Refund or restock.", DateTime.UtcNow));
-            await reviewTransaction.CommitAsync();
-
-            _logger.LogError(
-                "Order {OrderNumber} paid ({PaymentIntent}) but stock is insufficient. Flagged PaymentReview: refund or restock.",
-                orderNumber, paymentIntentId);
-        }
-        catch
-        {
-            await reviewTransaction.RollbackAsync();
-            throw;
-        }
-    }
-
-    public async Task<bool> ProcessCashOnDeliveryAsync(Guid orderId)
-    {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
-        try
-        {
-            var order = await _context.Orders.FindAsync(orderId);
-            if (order == null || order.Status != "Pending")
-                return false;
-
-            order.Status = "Paid"; // Mark as paid for COD
-            order.PaidAt = DateTime.UtcNow;
-
-            // Get order items for stock reduction
-            var orderItems = await _context.OrderItems
-                .Where(oi => oi.OrderId == orderId)
-                .ToListAsync();
-
-            // Atomic stock reduction - use SQL UPDATE to prevent overselling
-            foreach (var item in orderItems)
-            {
-                var rowsAffected = await _context.Database.ExecuteSqlRawAsync(
-                    "UPDATE \"Products\" SET \"Stock\" = \"Stock\" - {0} WHERE \"Id\" = {1} AND \"Stock\" >= {0}",
-                    item.Quantity, item.ProductId);
-
-                if (rowsAffected == 0)
-                {
-                    // Insufficient stock - rollback transaction and fail
-                    throw new InvalidOperationException($"Insufficient stock for product {item.ProductId}. Order cannot be fulfilled.");
-                }
-            }
-
-            // Clear cart
-            var cart = await _context.Carts
-                .Include(c => c.Items)
-                .FirstOrDefaultAsync(c => c.UserId == order.UserId);
-            if (cart != null)
-            {
-                _context.CartItems.RemoveRange(cart.Items);
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            // Send order confirmation email for COD orders
-            // Wrapped in try/catch to prevent failure on email issues
-            var user = await _context.Users.FindAsync(order.UserId);
-            if (user != null)
-            {
-                try
-                {
-                    await _emailService.SendOrderConfirmationEmailAsync(
-                        user.Email,
-                        $"{user.FirstName} {user.LastName}",
-                        order.OrderNumber,
-                        order.Total,
-                        order.PaidAt?.ToString(DateFormat) ?? DateTime.UtcNow.ToString(DateFormat)
-                    );
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Failed to send COD order confirmation email for {order.OrderNumber}: {ex.Message}");
-                }
-            }
-
-            return true;
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
     }
 
     public async Task<bool> CancelOrderAsync(Guid userId, Guid orderId)

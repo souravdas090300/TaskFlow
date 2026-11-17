@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using TaskFlow.Application;
 using TaskFlow.Application.Repositories;
@@ -16,7 +18,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer _postgresContainer;
     private ApplicationDbContext? _context;
-    private OrderService _orderService = null!;
+    private CheckoutService _checkoutService = null!;
     private readonly Mock<IEmailService> _mockEmailService = new();
 
     public PaymentIdempotencyTests()
@@ -40,7 +42,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         _context = new ApplicationDbContext(options);
         await _context.Database.MigrateAsync();
 
-        _orderService = CreateOrderService(_context);
+        _checkoutService = CreateCheckoutService(_context);
     }
 
     public async Task DisposeAsync()
@@ -52,31 +54,22 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         await _postgresContainer.DisposeAsync();
     }
 
-    private OrderService CreateOrderService(ApplicationDbContext context)
+    private CheckoutService CreateCheckoutService(ApplicationDbContext context)
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["OrderSettings:TaxRate"] = "0.10",
-                ["OrderSettings:FreeShippingThreshold"] = "50",
-                ["OrderSettings:ShippingCost"] = "5.99"
-            })
-            .Build();
-
-        _mockEmailService.Setup(x => x.SendOrderConfirmationEmailAsync(
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<string>(),
-            It.IsAny<decimal>(),
-            It.IsAny<string>()))
-            .Returns(Task.CompletedTask);
-
         var orderRepository = new OrderRepository(context);
         var eventRepository = new ProcessedWebhookEventRepository(context);
         var paymentIssueRepository = new PaymentIssueRepository(context);
-        var logger = new Moq.Mock<Microsoft.Extensions.Logging.ILogger<OrderService>>();
+        var stockRepository = new StockRepository(context);
+        var cartRepository = new CartRepository(context);
+        var addressLookup = new AddressLookup(context);
+        var userDirectory = new UserDirectory(context);
+        var unitOfWork = new UnitOfWork(context);
+        var settings = new OrderSettings { TaxRate = 0.10m, FreeShippingThreshold = 50m, ShippingCost = 5.99m };
 
-        return new OrderService(context, configuration, _mockEmailService.Object, orderRepository, eventRepository, paymentIssueRepository, logger.Object);
+        return new CheckoutService(
+            cartRepository, addressLookup, orderRepository, stockRepository,
+            eventRepository, paymentIssueRepository, userDirectory, _mockEmailService.Object,
+            unitOfWork, Options.Create(settings), TimeProvider.System, NullLogger<CheckoutService>.Instance);
     }
 
     [Fact]
@@ -156,13 +149,13 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         const string paymentIntentId = "pi_test_12345";
 
         // Act - Process the same payment twice
-        var firstResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+        var firstResult = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
 
         // Clear change tracker and recreate service to allow second call with same EventId
         _context.ChangeTracker.Clear();
-        _orderService = CreateOrderService(_context);
+        _checkoutService = CreateCheckoutService(_context);
 
-        var secondResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+        var secondResult = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
 
         // Assert
         Assert.Equal(PaymentResult.Processed, firstResult); // First payment should succeed
@@ -298,8 +291,8 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         using var context1 = new ApplicationDbContext(options);
         using var context2 = new ApplicationDbContext(options);
 
-        var service1 = CreateOrderService(context1);
-        var service2 = CreateOrderService(context2);
+        var service1 = CreateCheckoutService(context1);
+        var service2 = CreateCheckoutService(context2);
 
         var results = await Task.WhenAll(
             service1.ProcessStripePaymentAsync(order1.Id, paymentIntentId1, eventId1),
@@ -471,7 +464,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
             .Returns(Task.CompletedTask);
 
         // Act - Payment arrives but stock is out on line 2
-        var result = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+        var result = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
 
         // Assert - Webhook returns 200 (StockConflict means success, stripe doesn't retry)
         Assert.Equal(PaymentResult.StockConflict, result);
@@ -594,8 +587,8 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         using var context1 = new ApplicationDbContext(options);
         using var context2 = new ApplicationDbContext(options);
 
-        var service1 = CreateOrderService(context1);
-        var service2 = CreateOrderService(context2);
+        var service1 = CreateCheckoutService(context1);
+        var service2 = CreateCheckoutService(context2);
 
         var results = await Task.WhenAll(
             service1.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId),
@@ -710,12 +703,12 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         const string paymentIntentId = "pi_test_twoevents";
 
         // Act - Process two different events for the same order
-        var firstResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId1);
+        var firstResult = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId1);
 
         _context.ChangeTracker.Clear();
-        _orderService = CreateOrderService(_context);
+        _checkoutService = CreateCheckoutService(_context);
 
-        var secondResult = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId2);
+        var secondResult = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId2);
 
         // Assert - Both should return 200-equivalent results (webhook 200)
         Assert.Equal(PaymentResult.Processed, firstResult);
@@ -812,7 +805,7 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         const string paymentIntentId = "pi_test_cancelled";
 
         // Act - Process payment for cancelled order
-        var result = await _orderService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
+        var result = await _checkoutService.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId);
 
         // Assert - Should return Rejected
         Assert.Equal(PaymentResult.Rejected, result);
@@ -955,8 +948,8 @@ public class PaymentIdempotencyTests : IAsyncLifetime
         using var context1 = new ApplicationDbContext(options);
         using var context2 = new ApplicationDbContext(options);
 
-        var service1 = CreateOrderService(context1);
-        var service2 = CreateOrderService(context2);
+        var service1 = CreateCheckoutService(context1);
+        var service2 = CreateCheckoutService(context2);
 
         var results = await Task.WhenAll(
             service1.ProcessStripePaymentAsync(order.Id, paymentIntentId, eventId),

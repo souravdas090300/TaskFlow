@@ -719,7 +719,7 @@ app.MapGet("/api/checkout", async (HttpContext context, OrderService orderServic
     .RequireAuthorization();
 
 // Create order
-app.MapPost("/api/orders", async (HttpContext context, CreateOrderDto dto, IValidator<CreateOrderDto> validator, OrderService orderService) =>
+app.MapPost("/api/orders", async (HttpContext context, CreateOrderDto dto, IValidator<CreateOrderDto> validator, CheckoutService checkoutService, OrderService orderService) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -736,8 +736,14 @@ app.MapPost("/api/orders", async (HttpContext context, CreateOrderDto dto, IVali
         return Results.ValidationProblem(errors);
     }
 
-    var order = await orderService.CreateOrderAsync(userId, dto);
-    return order != null ? Results.Created($"/api/orders/{order.Id}", order) : Results.BadRequest("Cannot create order with empty cart");
+    var result = await checkoutService.CreateOrderAsync(userId, dto.ShippingAddressId, dto.PaymentMethod.ToString());
+    if (!result.IsSuccess)
+    {
+        return Results.BadRequest(new { error = result.Message, code = result.Error?.ToString() });
+    }
+
+    var order = result.OrderId.HasValue ? await orderService.GetOrderByIdAsync(userId, result.OrderId.Value) : null;
+    return order != null ? Results.Created($"/api/orders/{order.Id}", order) : Results.BadRequest("Cannot create order");
 })
     .WithName("CreateOrder")
     .RequireAuthorization();
@@ -785,6 +791,29 @@ app.MapPost("/api/orders/{id}/cancel", async (HttpContext context, Guid id, Orde
     return success ? Results.Ok(new { message = "Order cancelled" }) : Results.BadRequest("Cannot cancel this order");
 })
     .WithName("CancelOrder")
+    .RequireAuthorization();
+
+// Confirm cash-on-delivery order (marks Paid, decrements stock atomically)
+app.MapPost("/api/orders/{id}/cash-on-delivery", async (HttpContext context, Guid id, CheckoutService checkoutService) =>
+{
+    var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
+    {
+        return Results.Unauthorized();
+    }
+
+    var result = await checkoutService.ProcessCashOnDeliveryAsync(id, userId);
+    return result switch
+    {
+        CashOnDeliveryResult.Confirmed => Results.Ok(new { message = "Order confirmed" }),
+        CashOnDeliveryResult.OrderNotFound => Results.NotFound(new { error = "Order not found" }),
+        CashOnDeliveryResult.OutOfStock => Results.Conflict(new { error = "Insufficient stock to fulfil this order" }),
+        CashOnDeliveryResult.NotPending => Results.Conflict(new { error = "Order is not pending" }),
+        CashOnDeliveryResult.NotCashOnDelivery => Results.BadRequest(new { error = "Order is not cash on delivery" }),
+        _ => Results.BadRequest(new { error = "Cannot confirm order" })
+    };
+})
+    .WithName("ConfirmCashOnDelivery")
     .RequireAuthorization();
 
 // Admin: Get all orders
@@ -869,7 +898,7 @@ app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSe
     .RequireAuthorization();
 
 // Stripe webhook endpoint
-app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway paymentGateway, OrderService orderService) =>
+app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway paymentGateway, CheckoutService checkoutService) =>
 {
     using var reader = new StreamReader(request.Body);
     var jsonPayload = await reader.ReadToEndAsync();
@@ -903,7 +932,7 @@ app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway p
                 300
             );
             
-            var result = await orderService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, stripeEvent.Id);
+            var result = await checkoutService.ProcessStripePaymentAsync(orderId.Value, paymentIntentId, stripeEvent.Id);
 
             // All successful results (Processed, AlreadyProcessed, StockConflict) return 200
             // Stripe should not retry these
