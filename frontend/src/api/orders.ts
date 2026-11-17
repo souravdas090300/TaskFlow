@@ -17,7 +17,7 @@ export interface Order {
   userId: string;
   userEmail?: string;
   orderNumber: string;
-  status: 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
+  status: 'Pending' | 'Paid' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled' | 'PaymentReview';
   paymentMethod: 'Stripe' | 'CashOnDelivery';
   subtotal: number;
   tax: number;

@@ -1,17 +1,6 @@
 namespace TaskFlow.Application.DTOs;
 
-public class CreateCheckoutSessionDto
-{
-    public Guid OrderId { get; set; }
-    public string SuccessUrl { get; set; } = string.Empty;
-    public string CancelUrl { get; set; } = string.Empty;
-}
-
-public class CheckoutSessionResponse
-{
-    public string SessionId { get; set; } = string.Empty;
-    public string CheckoutUrl { get; set; } = string.Empty;
-}
+public record CreateCheckoutRequest(Guid OrderId);
 
 public class StripeWebhookDto
 {

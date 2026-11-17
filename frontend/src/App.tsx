@@ -10,6 +10,7 @@ import { Cart } from './pages/Cart';
 import { Checkout } from './pages/Checkout';
 import { Orders } from './pages/Orders';
 import { OrderDetail } from './pages/OrderDetail';
+import OrderConfirmationPage from './pages/OrderConfirmationPage';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
@@ -48,6 +49,11 @@ function App() {
           <Route path="/orders/:id" element={
             <ProtectedRoute>
               <OrderDetail />
+            </ProtectedRoute>
+          } />
+          <Route path="/orders/:id/confirmation" element={
+            <ProtectedRoute>
+              <OrderConfirmationPage />
             </ProtectedRoute>
           } />
           <Route path="/login" element={<Login />} />

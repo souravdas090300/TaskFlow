@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Stripe;
-using TaskFlow.Application.DTOs;
+using Stripe.Checkout;
 using TaskFlow.Application.Services;
 
 namespace TaskFlow.Infrastructure.Services;
@@ -18,22 +18,6 @@ public class StripePaymentGateway : IPaymentGateway
         _webhookSecret = configuration["Stripe:WebhookSecret"] ?? throw new InvalidOperationException("Stripe:WebhookSecret must be configured");
         
         StripeConfiguration.ApiKey = secretKey;
-    }
-
-    public async Task<CheckoutSessionResponse?> CreateCheckoutSessionAsync(Guid orderId, decimal amount, string successUrl, string cancelUrl, string? orderNumber = null)
-    {
-        // NOTE: Full Stripe.net checkout session creation requires SessionService
-        // Current implementation uses mock to allow build. Production requires:
-        // - SessionService.CreateAsync with SessionCreateOptions
-        // - Proper metadata binding (OrderId)
-        // - Success/cancel URL configuration
-        Console.WriteLine($"Stripe checkout session requested for order {orderId} with amount {amount}");
-
-        return new CheckoutSessionResponse
-        {
-            SessionId = Guid.NewGuid().ToString(),
-            CheckoutUrl = successUrl
-        };
     }
 
     public bool VerifyWebhookSignature(string jsonPayload, string sigHeader)
@@ -76,11 +60,27 @@ public class StripePaymentGateway : IPaymentGateway
             if (stripeEvent.Type == "payment_intent.succeeded")
             {
                 var paymentIntent = stripeEvent.Data.Object as PaymentIntent;
-                var orderIdStr = paymentIntent?.Metadata["OrderId"];
-                
+                var orderIdStr = GetMeta(paymentIntent?.Metadata, "orderId") ?? GetMeta(paymentIntent?.Metadata, "OrderId");
+
                 if (Guid.TryParse(orderIdStr, out var orderId))
                 {
                     return (paymentIntent?.Id, orderId);
+                }
+            }
+
+            if (stripeEvent.Type == "checkout.session.completed")
+            {
+                var session = stripeEvent.Data.Object as Session;
+                // Only act on fully paid sessions; unpaid/async sessions are ignored.
+                if (session?.PaymentStatus != "paid")
+                {
+                    return (null, null);
+                }
+
+                var orderIdStr = GetMeta(session.Metadata, "orderId") ?? session.ClientReferenceId;
+                if (Guid.TryParse(orderIdStr, out var orderId))
+                {
+                    return (session.PaymentIntent?.Id, orderId);
                 }
             }
 
@@ -92,4 +92,7 @@ public class StripePaymentGateway : IPaymentGateway
             return (null, null);
         }
     }
+
+    private static string? GetMeta(IDictionary<string, string?>? metadata, string key)
+        => metadata != null && metadata.TryGetValue(key, out var value) ? value : null;
 }

@@ -1,18 +1,11 @@
-using TaskFlow.Application.DTOs;
-
 namespace TaskFlow.Application.Services;
 
 /// <summary>
-/// Payment gateway interface for processing payments.
-/// Implementations can use Stripe, PayPal, or other payment providers.
+/// Payment gateway interface for webhook verification and event parsing.
+/// Checkout sessions are created by StripeCheckoutService in Infrastructure.
 /// </summary>
 public interface IPaymentGateway
 {
-    /// <summary>
-    /// Creates a checkout session for the given order.
-    /// </summary>
-    Task<CheckoutSessionResponse?> CreateCheckoutSessionAsync(Guid orderId, decimal amount, string successUrl, string cancelUrl, string? orderNumber = null);
-
     /// <summary>
     /// Verifies the webhook signature from the payment provider.
     /// </summary>

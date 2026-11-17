@@ -1,7 +1,9 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ordersApi } from '../api/orders';
+import { startStripeCheckout } from '../api/stripe';
 import { Link } from 'react-router-dom';
+import { useState } from 'react';
 
 export const OrderDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -10,7 +12,21 @@ export const OrderDetail = () => {
     queryFn: () => ordersApi.getOrderById(id!),
   });
 
+  const [isPaying, setIsPaying] = useState(false);
+
   if (!order) return <div>Loading...</div>;
+
+  const handlePayNow = async () => {
+    if (isPaying) return;
+    setIsPaying(true);
+    try {
+      const url = await startStripeCheckout(order.id);
+      window.location.assign(url);
+    } catch {
+      alert('Could not start payment. Please try again.');
+      setIsPaying(false);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     if (status === 'Paid') return 'bg-green-100 text-green-800';
@@ -31,9 +47,20 @@ export const OrderDetail = () => {
               <h1 className="text-2xl font-bold">{order.orderNumber}</h1>
               <p className="text-gray-600">{new Date(order.createdAt).toLocaleString()}</p>
             </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(order.status)}`}>
-              {order.status}
-            </span>
+            <div className="flex items-center gap-3">
+              {order.status === 'Pending' && order.paymentMethod === 'Stripe' && (
+                <button
+                  onClick={handlePayNow}
+                  disabled={isPaying}
+                  className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-gray-400"
+                >
+                  {isPaying ? 'Redirecting...' : 'Pay now'}
+                </button>
+              )}
+              <span className={`px-3 py-1 rounded-full text-sm font-semibold ${getStatusColor(order.status)}`}>
+                {order.status}
+              </span>
+            </div>
           </div>
 
           <div className="mb-6">

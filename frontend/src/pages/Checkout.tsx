@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ordersApi } from '../api/orders';
+import { confirmCashOnDelivery, startStripeCheckout } from '../api/stripe';
 import { useCartStore } from '../store/useCartStore';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,17 +16,28 @@ export const Checkout = () => {
   const [selectedAddress, setSelectedAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Stripe');
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleCheckout = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       const order = await ordersApi.createOrder({
         shippingAddressId: selectedAddress,
         paymentMethod,
       });
       void clearCart();
-      void navigate(`/orders/${order.id}`);
+      if (paymentMethod === 'CashOnDelivery') {
+        await confirmCashOnDelivery(order.id);
+        void navigate(`/orders/${order.id}/confirmation`);
+      } else {
+        const url = await startStripeCheckout(order.id);
+        window.location.assign(url); // leave the SPA for Stripe's hosted page
+      }
     } catch (error) {
       // Alert user of checkout failure
       alert('Checkout failed');
+      setIsSubmitting(false);
     }
   };
 
@@ -64,7 +76,7 @@ export const Checkout = () => {
 
             <button
               onClick={handleCheckout}
-              disabled={!selectedAddress}
+              disabled={!selectedAddress || isSubmitting}
               className="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700 transition mt-6 disabled:bg-gray-400"
             >
               Place Order

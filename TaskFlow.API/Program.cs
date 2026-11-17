@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using TaskFlow.API.Middleware;
 using TaskFlow.API.Services;
 using TaskFlow.API.Models;
@@ -106,6 +107,7 @@ else
 
 // Register payment gateway
 builder.Services.AddScoped<IPaymentGateway, StripePaymentGateway>();
+builder.Services.AddScoped<StripeCheckoutService>();
 
 // Register FluentValidation
 builder.Services.AddValidatorsFromAssemblyContaining<CreateProductValidator>();
@@ -117,6 +119,22 @@ builder.Services.Configure<IpRateLimitPolicies>(builder.Configuration.GetSection
 builder.Services.AddInMemoryRateLimiting();
 builder.Services.AddSingleton<IRateLimitConfiguration, RateLimitConfiguration>();
 builder.Services.AddHttpContextAccessor();
+
+// Per-user fixed-window limit for Stripe checkout session creation.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("checkout", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
+});
 
 // Configure Authentication
 var jwtKey = builder.Configuration["Jwt:Key"];
@@ -145,6 +163,13 @@ if (!builder.Environment.IsDevelopment())
     if (string.IsNullOrEmpty(stripeWebhookSecret))
     {
         throw new InvalidOperationException("Stripe:WebhookSecret must be configured in production environment");
+    }
+
+    var publicUrl = builder.Configuration["App:PublicUrl"];
+    if (string.IsNullOrWhiteSpace(publicUrl) || !Uri.TryCreate(publicUrl, UriKind.Absolute, out var publicUri)
+        || (publicUri.Scheme != Uri.UriSchemeHttps && publicUri.Scheme != Uri.UriSchemeHttp))
+    {
+        throw new InvalidOperationException("App:PublicUrl must be configured as an absolute http(s) URL in production environment");
     }
 }
 
@@ -188,6 +213,12 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
+// Configure Stripe SDK once at startup.
+if (!string.IsNullOrEmpty(stripeSecretKey))
+{
+    Stripe.StripeConfiguration.ApiKey = stripeSecretKey;
+}
+
 var app = builder.Build();
 
 // The app runs behind Nginx Proxy Manager, which sets X-Forwarded-* headers.
@@ -219,6 +250,7 @@ app.UseMiddleware<GlobalExceptionHandler>();
 // Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // Serve static files from wwwroot (React build output)
 app.UseStaticFiles();
@@ -876,7 +908,7 @@ app.MapGet("/api/admin/stats", async (ApplicationDbContext context) =>
 app.MapPaymentIssueEndpoints();
 
 // Create Stripe checkout session
-app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSessionDto dto, IPaymentGateway paymentGateway, OrderService orderService) =>
+app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutRequest body, StripeCheckoutService checkout) =>
 {
     var userIdClaim = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userIdClaim == null || !Guid.TryParse(userIdClaim, out var userId))
@@ -884,18 +916,16 @@ app.MapPost("/api/stripe/checkout", async (HttpContext context, CreateCheckoutSe
         return Results.Unauthorized();
     }
 
-    // Fetch the order to get the amount and order number
-    var order = await orderService.GetOrderByIdAsync(userId, dto.OrderId);
-    if (order == null)
-    {
-        return Results.NotFound("Order not found");
-    }
-
-    var session = await paymentGateway.CreateCheckoutSessionAsync(dto.OrderId, order.Total, dto.SuccessUrl, dto.CancelUrl, order.OrderNumber);
-    return session != null ? Results.Ok(session) : Results.BadRequest("Failed to create checkout session");
+    var result = await checkout.CreateSessionAsync(body.OrderId, userId);
+    return result.Ok
+        ? Results.Ok(new { url = result.Url })
+        : result.Error == "NotFound"
+            ? Results.NotFound()
+            : Results.BadRequest(new { error = result.Error });
 })
     .WithName("CreateStripeCheckout")
-    .RequireAuthorization();
+    .RequireAuthorization()
+    .RequireRateLimiting("checkout");
 
 // Stripe webhook endpoint
 app.MapPost("/api/stripe/webhook", async (HttpRequest request, IPaymentGateway paymentGateway, CheckoutService checkoutService) =>
