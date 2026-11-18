@@ -34,7 +34,7 @@ export const Checkout = () => {
         const url = await startStripeCheckout(order.id);
         window.location.assign(url); // leave the SPA for Stripe's hosted page
       }
-    } catch (error) {
+    } catch {
       // Alert user of checkout failure
       alert('Checkout failed');
       setIsSubmitting(false);
@@ -57,7 +57,7 @@ export const Checkout = () => {
               required
             >
               <option value="">Select an address</option>
-              {checkout.addresses.map((addr: any) => (
+              {checkout.addresses.map((addr) => (
                 <option key={addr.id} value={addr.id}>
                   {addr.firstName} {addr.lastName} - {addr.addressLine1}
                 </option>

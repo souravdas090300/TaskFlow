@@ -22,7 +22,7 @@ api.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<void> | null = null;
 
-async function tryRefreshToken(): Promise<void> {
+export async function refreshAuthTokens(): Promise<void> {
   const refreshToken = localStorage.getItem('refreshToken');
   if (!refreshToken) throw new Error('No refresh token');
   const response = await axios.post(`${API_BASE_URL}/api/auth/refresh`, { refreshToken });
@@ -31,10 +31,20 @@ async function tryRefreshToken(): Promise<void> {
   localStorage.setItem('user', JSON.stringify(response.data.user));
 }
 
-function clearAuthAndRedirect() {
+export function clearAuthStorage(): void {
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
+}
+
+export async function ensureFreshAccessToken(): Promise<void> {
+  // Share one in-flight refresh across concurrent 401s
+  refreshPromise ??= refreshAuthTokens().finally(() => { refreshPromise = null; });
+  await refreshPromise;
+}
+
+function clearAuthAndRedirect() {
+  clearAuthStorage();
   window.location.href = '/login';
 }
 
@@ -50,9 +60,7 @@ api.interceptors.response.use(
 
     originalRequest._retried = true;
     try {
-      // Share one in-flight refresh across concurrent 401s
-      refreshPromise ??= tryRefreshToken().finally(() => { refreshPromise = null; });
-      await refreshPromise;
+      await ensureFreshAccessToken();
       originalRequest.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
       return api(originalRequest);
     } catch {

@@ -1,6 +1,23 @@
 import api from './client';
 import type { CartItem } from './cart';
 
+export interface AddressDto {
+  id: string;
+  userId: string;
+  type: 'Shipping' | 'Billing' | string;
+  firstName: string;
+  lastName: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  phone?: string;
+  isDefault: boolean;
+  createdAt: string;
+}
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -31,8 +48,8 @@ export interface Order {
   deliveredAt?: string;
   cancelledAt?: string;
   trackingNumber?: string;
-  shippingAddress?: any;
-  billingAddress?: any;
+  shippingAddress?: AddressDto;
+  billingAddress?: AddressDto;
   items: OrderItem[];
 }
 
@@ -45,7 +62,7 @@ export interface Checkout {
   tax: number;
   shipping: number;
   total: number;
-  addresses: any[];
+  addresses: AddressDto[];
 }
 
 export const ordersApi = {

@@ -154,6 +154,7 @@ if (string.IsNullOrEmpty(jwtKey))
 // Validate Stripe configuration in production
 var stripeSecretKey = builder.Configuration["Stripe:SecretKey"];
 var stripeWebhookSecret = builder.Configuration["Stripe:WebhookSecret"];
+var appPublicUrl = builder.Configuration["App:PublicUrl"]?.TrimEnd('/');
 if (!builder.Environment.IsDevelopment())
 {
     if (string.IsNullOrEmpty(stripeSecretKey))
@@ -165,8 +166,7 @@ if (!builder.Environment.IsDevelopment())
         throw new InvalidOperationException("Stripe:WebhookSecret must be configured in production environment");
     }
 
-    var publicUrl = builder.Configuration["App:PublicUrl"];
-    if (string.IsNullOrWhiteSpace(publicUrl) || !Uri.TryCreate(publicUrl, UriKind.Absolute, out var publicUri)
+    if (string.IsNullOrWhiteSpace(appPublicUrl) || !Uri.TryCreate(appPublicUrl, UriKind.Absolute, out var publicUri)
         || (publicUri.Scheme != Uri.UriSchemeHttps && publicUri.Scheme != Uri.UriSchemeHttp))
     {
         throw new InvalidOperationException("App:PublicUrl must be configured as an absolute http(s) URL in production environment");
@@ -200,15 +200,18 @@ builder.Services.AddAuthentication(options =>
 {
     options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "";
     options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "";
-    
-    // This forces the app to use the exact URL Google expects
+
     options.CallbackPath = "/signin-google";
-    options.Events.OnRedirectToAuthorizationEndpoint = context =>
+
+    if (!builder.Environment.IsDevelopment() && !string.IsNullOrEmpty(appPublicUrl))
     {
-        var redirectUri = "https://taskflow-das.duckdns.org/signin-google";
-        context.RedirectUri = context.RedirectUri.Replace("http://", "https://").Replace("taskflow-api:80", "taskflow-das.duckdns.org");
-        return Task.CompletedTask;
-    };
+        var googleRedirectUri = new Uri(new Uri(appPublicUrl), "/signin-google").ToString();
+        options.Events.OnRedirectToAuthorizationEndpoint = context =>
+        {
+            context.RedirectUri = googleRedirectUri;
+            return Task.CompletedTask;
+        };
+    }
 });
 
 builder.Services.AddAuthorization();

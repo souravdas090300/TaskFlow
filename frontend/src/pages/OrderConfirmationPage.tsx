@@ -1,19 +1,25 @@
-import { useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ordersApi } from '../api/orders';
 
 export const OrderConfirmationPage = () => {
   const { id } = useParams<{ id: string }>();
+  const [timedOut, setTimedOut] = useState(false);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setTimedOut(true), 60_000);
+    return () => window.clearTimeout(timeout);
+  }, []);
+
   // NEVER trust the redirect params — poll until the webhook flips the status.
-  const startedAt = useRef(Date.now());
   const { data: order, isLoading } = useQuery({
     queryKey: ['order', id],
     queryFn: () => ordersApi.getOrderById(id!),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       const settled = status === 'Paid' || status === 'PaymentReview' || status === 'Cancelled';
-      return settled || Date.now() - startedAt.current > 60_000 ? false : 2000;
+      return settled || timedOut ? false : 2000;
     },
   });
 
@@ -32,7 +38,7 @@ export const OrderConfirmationPage = () => {
     message = `Payment received. Thank you! Your order ${order.orderNumber} is confirmed.`;
   } else if (order.status === 'PaymentReview') {
     message = `We received your payment but need to check stock for order ${order.orderNumber}. We will email you shortly. Please do not pay again.`;
-  } else if (Date.now() - startedAt.current > 60_000) {
+  } else if (timedOut) {
     message = 'Still processing. Check "My orders" in a minute. Please do not pay again.';
   } else {
     message = 'Confirming your payment...';

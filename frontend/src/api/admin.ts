@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { clearAuthStorage, ensureFreshAccessToken } from './client';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -21,16 +22,30 @@ client.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor to handle errors
+function clearAdminAuthAndRedirect() {
+  clearAuthStorage();
+  window.location.href = '/admin/login';
+}
+
+// Response interceptor: on 401, try one token refresh then retry the request once
 client.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/admin/login';
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status !== 401 || originalRequest?._retried) {
+      if (error.response?.status === 401) clearAdminAuthAndRedirect();
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
+
+    originalRequest._retried = true;
+    try {
+      await ensureFreshAccessToken();
+      originalRequest.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
+      return client(originalRequest);
+    } catch {
+      clearAdminAuthAndRedirect();
+      return Promise.reject(error);
+    }
   }
 );
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -10,12 +10,13 @@ export const Register = () => {
   const register = useAuthStore((state) => state.register);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       await register(email, password, firstName, lastName);
-      navigate('/');
+      void navigate('/');
     } catch (error) {
+      console.error(error);
       alert('Registration failed');
     }
   };
@@ -26,8 +27,9 @@ export const Register = () => {
         <h1 className="text-2xl font-bold mb-6">Register</h1>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">First Name</label>
+            <label htmlFor="register-first-name" className="block text-sm font-medium mb-1">First Name</label>
             <input
+              id="register-first-name"
               type="text"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
@@ -36,8 +38,9 @@ export const Register = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Last Name</label>
+            <label htmlFor="register-last-name" className="block text-sm font-medium mb-1">Last Name</label>
             <input
+              id="register-last-name"
               type="text"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
@@ -46,8 +49,9 @@ export const Register = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label htmlFor="register-email" className="block text-sm font-medium mb-1">Email</label>
             <input
+              id="register-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -56,8 +60,9 @@ export const Register = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label htmlFor="register-password" className="block text-sm font-medium mb-1">Password</label>
             <input
+              id="register-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

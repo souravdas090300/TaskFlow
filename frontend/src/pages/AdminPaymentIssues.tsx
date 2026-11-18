@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import { Link } from 'react-router-dom';
 import { adminApi, type PaymentIssue } from '../api/admin';
 
@@ -20,8 +21,8 @@ const IssueCard = ({ issue, onResolved }: { issue: PaymentIssue; onResolved: () 
   const resolveMutation = useMutation({
     mutationFn: () => adminApi.resolvePaymentIssue(issue.id, note.trim()),
     onSuccess: onResolved,
-    onError: (e: any) => {
-      const msg = e?.response?.data?.error;
+    onError: (e: unknown) => {
+      const msg = isAxiosError(e) ? e.response?.data?.error : undefined;
       setError(typeof msg === 'string' ? msg : 'Failed to resolve issue. Please try again.');
     },
   });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
 
@@ -9,7 +9,7 @@ export const AdminLogin = () => {
   const login = useAuthStore((state) => state.login);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     try {
@@ -20,7 +20,7 @@ export const AdminLogin = () => {
         setError('This account does not have admin access.');
         return;
       }
-      navigate('/admin');
+      void navigate('/admin');
     } catch {
       setError('Invalid email or password.');
     }
@@ -41,8 +41,9 @@ export const AdminLogin = () => {
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
+            <label htmlFor="admin-email" className="block text-sm font-medium text-slate-300 mb-1">Email</label>
             <input
+              id="admin-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -51,8 +52,9 @@ export const AdminLogin = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
+            <label htmlFor="admin-password" className="block text-sm font-medium text-slate-300 mb-1">Password</label>
             <input
+              id="admin-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}

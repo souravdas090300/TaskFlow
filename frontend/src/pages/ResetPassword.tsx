@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
 
@@ -11,7 +11,7 @@ export const ResetPassword = () => {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError('');
     if (password.length < 8) {
@@ -25,7 +25,7 @@ export const ResetPassword = () => {
     setLoading(true);
     try {
       await authApi.resetPassword(token, password);
-      navigate('/login');
+      void navigate('/login');
     } catch {
       setError('This reset link is invalid or has expired. Request a new one.');
     } finally {
@@ -44,8 +44,9 @@ export const ResetPassword = () => {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">New password</label>
+              <label htmlFor="reset-password" className="block text-sm font-medium mb-1">New password</label>
               <input
+                id="reset-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -55,8 +56,9 @@ export const ResetPassword = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Confirm password</label>
+              <label htmlFor="reset-confirm-password" className="block text-sm font-medium mb-1">Confirm password</label>
               <input
+                id="reset-confirm-password"
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}

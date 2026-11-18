@@ -5,9 +5,9 @@ import { Link } from 'react-router-dom';
 
 export const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuthStore();
-  const { items } = useCartStore((state: any) => state.items);
+  const items = useCartStore((state) => state.items);
   const guestCount = useGuestCartStore((state) => state.totalItems());
-  const cartCount = isAuthenticated ? (items?.length || 0) : guestCount;
+  const cartCount = isAuthenticated ? items.length : guestCount;
 
   return (
     <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-white/10">

@@ -1,115 +1,170 @@
 # TaskFlow
 
-A full-stack e-commerce solution built with **.NET 10**, **React 19 + TypeScript + Vite**, **PostgreSQL 17**, **Stripe**, and **Docker**.
+A full-stack e-commerce portfolio app built with **.NET 10**, **React 19 + TypeScript + Vite**, **PostgreSQL 17**, **Stripe**, **Resend**, and **Docker**.
+
+Production demo: `https://taskflow-das.duckdns.org`
 
 ## Quick Start
 
-### Local Development
+### Local development with Docker
 
 ```bash
-# Copy and fill in environment variables
-cp .env.example .env          # or .env.dev for the dev compose stack
-# Edit .env with your Google OAuth + Stripe test credentials
+# Create/refresh env files from the template and fill in values
+cp .env.example .env        # used by Compose for variable interpolation
+cp .env.example .env.dev    # used by the dev stack via env_file
 
-# Start the dev stack (API + frontend + PostgreSQL)
+# Required values include DB_PASSWORD, GOOGLE_CLIENT_ID/SECRET,
+# Stripe__SecretKey, VITE_STRIPE_PUBLISHABLE_KEY, and App__PublicUrl.
+
+# Start API + frontend + PostgreSQL + migrator
 docker compose -f docker-compose.dev.yml up -d --build
-
-# Access the application
-# Frontend: http://localhost
-# API:      http://localhost:5000  (also proxied at http://localhost/api)
-# Health:   http://localhost:5000/health
+docker compose up -d --build
 ```
 
-For local frontend development without Docker:
+Useful URLs:
+
+- Frontend: `http://localhost`
+- API: `http://localhost:5000`
+- Frontend nginx proxy: `http://localhost/api/...`
+- Health: `http://localhost:5000/health` and `http://localhost:5000/db-health`
+
+### Frontend only
 
 ```bash
 cd frontend
 npm install
-npm run dev        # http://localhost:5173 - vite proxies /api to localhost:5000
+npm run dev        # http://localhost:5173, proxies /api and /health to localhost:5000
+npm test           # Vitest
+npm run lint       # ESLint
+npm run build      # tsc + Vite production build -> frontend/dist
 ```
 
-### Run tests
+### Backend only
 
 ```bash
-dotnet test TaskFlow.UnitTests          # fast, no Docker needed
-dotnet test TaskFlow.IntegrationTests   # needs Docker (Testcontainers PostgreSQL)
+dotnet restore
+dotnet ef database update --project TaskFlow.Infrastructure --startup-project TaskFlow.API
+dotnet run --project TaskFlow.API
 ```
 
-## Production Deployment (Oracle Cloud)
-
-Deployed on an Oracle Cloud VM behind **Nginx Proxy Manager** with **DuckDNS** (`taskflow-das.duckdns.org`).
-
-```powershell
-# From Windows - upload the project to the server
-scp -i "C:\Users\dasau\ssh-key-2026-11-15.key" -r C:\dev\TaskFlow ubuntu@92.5.144.125:~/TaskFlow
-```
+## Tests
 
 ```bash
-# On the server (ssh -i "C:\Users\dasau\ssh-key-2026-11-15.key" ubuntu@92.5.144.125)
-sudo apt install -y docker.io docker-compose-v2 git
-sudo usermod -aG docker $USER && newgrp docker
+dotnet test TaskFlow.UnitTests          # fast unit tests, no Docker needed
+dotnet test TaskFlow.IntegrationTests   # Testcontainers PostgreSQL, needs Docker
 
+cd frontend
+npm test
+npm run lint
+npm run build
+```
+
+## Production deployment
+
+Production runs on an Oracle Cloud VM behind **Nginx Proxy Manager** + **DuckDNS** (`taskflow-das.duckdns.org`).
+
+### Automated deploy (Primary Method)
+
+`.github/workflows/deploy.yml` builds and pushes the API, frontend, and migrator images to GHCR on pushes to `main`, then SSHes into the VPS, resets the repo, writes `.env`, pulls images, and runs `docker compose up -d`.
+
+### Manual VPS deploy (Fallback)
+
+If the CI/CD pipeline fails, you can manually pull the latest code and restart the containers on the server:
+
+```bash
+# On the server via SSH
 cd ~/TaskFlow
-cp .env.prod .env       # fill in DB_PASSWORD, Stripe__*, Resend__*, etc.
-docker compose up -d --build
+git fetch origin main
+git reset --hard origin/main
+sudo docker compose pull
+sudo docker compose up -d
 ```
 
-Then in Nginx Proxy Manager (`http://92.5.144.125:81`): add proxy host
-`taskflow-das.duckdns.org` → `http://taskflow-frontend:80` and issue a
-Let's Encrypt certificate (DNS challenge via DuckDNS).
+`docker-compose.prod.yml`/`docker-compose.yml` consume prebuilt images via `DOCKER_IMAGE_*`; `--build` is only used by `docker-compose.dev.yml` or for local testing.
 
-Full guide: [docs/PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md)
+Then in Nginx Proxy Manager (`http://92.5.144.125:81`), proxy `taskflow-das.duckdns.org` to `http://taskflow-frontend:80` (and use Custom Locations to route `/api` and `/health` to `http://taskflow-api:80`) and issue a Let's Encrypt certificate.
+
+Full guides:
+
+- [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md)
+- [CI/CD Setup](docs/CI_CD_SETUP.md)
+- [Backup & Rollback](docs/BACKUP_AND_ROLLBACK.md)
 
 ## Architecture
 
-- **Backend**: ASP.NET Core 10 minimal APIs, layered (API / Application / Domain / Infrastructure)
-- **Frontend**: React 19 + TypeScript + Vite, served by nginx (proxies `/api` to the API container)
-- **Database**: PostgreSQL 17 + EF Core migrations (incl. ARM64-aware `Dockerfile.migrator`)
-- **Payments**: Stripe (Checkout + webhooks, idempotent `payment_intent.succeeded` handling, PaymentReview for stock conflicts, admin payment-issues API)
-- **Email**: Resend (production) / mock (development)
-- **Auth**: JWT + Google OAuth
-- **Infra**: Docker Compose, Nginx Proxy Manager (SSL), DuckDNS
+- **Backend**: ASP.NET Core 10 minimal APIs, layered as API / Application / Domain / Infrastructure.
+- **Frontend**: React 19 + TypeScript + Vite, built to static files and served by nginx inside `Dockerfile.frontend`.
+- **Database**: PostgreSQL 17 + EF Core; `Dockerfile.migrator` runs the migration bundle once per deploy and is ARM64-aware.
+- **Auth**: JWT access/refresh tokens, email verification, password reset, and Google OAuth via ASP.NET Core authentication.
+- **Payments**: Stripe Checkout + webhooks with idempotent handling, `PaymentReview` stock-conflict flow, and an admin payment-issues API.
+- **Email**: Resend in production, mock email service in development.
+- **Edge**: Nginx Proxy Manager terminates HTTPS and routes traffic. It forwards `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API container, and all other traffic to the frontend container.
+- **CI/CD**: GitHub Actions builds images in the cloud, pushes to GHCR, and deploys to the Oracle VPS.
 
 ## Features
 
-- ✅ Product catalog with categories, images, variants
-- ✅ Shopping cart, addresses, coupons-ready order totals (tax/shipping rules)
-- ✅ Orders: Stripe + Cash on Delivery, cancellation, admin status/tracking
-- ✅ Stripe webhook idempotency + atomic stock decrement
-- ✅ Payment issue tracking for admin review (unknown order, closed order, double charge, stock conflict)
-- ✅ Admin dashboard (stats, orders, products, categories)
-- ✅ Rate limiting, global exception handling, forwarded headers
-- ✅ Docker Compose (dev / prod / full stack) + ARM64 migration bundle
-- ✅ Automated backups/restore scripts
+- Product catalog with categories, images, variants, search, and sorting
+- Cart, addresses, checkout totals with tax/shipping rules
+- Orders via Stripe or Cash on Delivery, cancellation, admin status/tracking
+- Stripe webhook idempotency, atomic stock decrement, payment issue tracking
+- Admin dashboard for stats, orders, products, categories, and payment issues
+- Public legal pages for Google OAuth review: `/privacy-policy` and `/terms-of-service`
+- Rate limiting, global exception handling, forwarded headers
+- Docker Compose dev/prod stacks, ARM64 migration bundle, backup/restore scripts
 
 ## Documentation
 
-- [Getting Started](docs/GETTING_STARTED.md) - local development
-- [Environment Setup](docs/ENVIRONMENT_SETUP.md) - env var reference
-- [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md) - VPS + Nginx Proxy Manager + DuckDNS
-- [Backup & Rollback](docs/BACKUP_AND_ROLLBACK.md) - DB backups, restore, app rollback
-- [Mutation Testing](docs/MUTATION_TESTING.md) - Stryker.NET for pricing logic
-- [CI/CD Setup](docs/CI_CD_SETUP.md) - GitHub Actions
-- [Google Authentication](docs/GOOGLE_AUTH_SETUP.md) - OAuth setup
-- [Database Setup](docs/DATABASE_SETUP.md) - PostgreSQL & EF Core
+- [Documentation index](docs/INDEX.md)
+- [Getting Started](docs/GETTING_STARTED.md)
+- [Environment Setup](docs/ENVIRONMENT_SETUP.md)
+- [Database Setup](docs/DATABASE_SETUP.md)
+- [Google Authentication](docs/GOOGLE_AUTH_SETUP.md)
+- [Resend Email Setup](docs/REGISTER-EMAIL.md)
+- [CI/CD Setup](docs/CI_CD_SETUP.md)
+- [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md)
+- [Docker Deployment](docs/DEPLOYMENT_DOCKER.md)
+- [Azure Deployment](docs/DEPLOYMENT.md)
+- [Backup & Rollback](docs/BACKUP_AND_ROLLBACK.md)
+- [Mutation Testing](docs/MUTATION_TESTING.md)
 
-## Project Structure
+## Project structure
 
-```
+```text
 TaskFlow/
-├── TaskFlow.API/               # Minimal API endpoints, middleware, Program.cs
-├── TaskFlow.Application/       # Services (CartService, OrderService, CheckoutService), DTOs, repository interfaces
-├── TaskFlow.Domain/            # Entities, constants
-├── TaskFlow.Infrastructure/    # EF Core DbContext, repositories, Stripe/Resend services, migrations
-├── TaskFlow.UnitTests/         # Moq/xUnit unit tests (Checkout, Domain, Services)
-├── TaskFlow.IntegrationTests/  # Testcontainers PostgreSQL integration tests
-├── frontend/                   # React + Vite storefront & admin
-├── docs/                       # Documentation
-├── scripts/                    # backup-db.sh / restore-db.sh
-├── Dockerfile.migrator         # ARM-aware EF migrations bundle
-└── docker-compose*.yml         # dev / prod / full-stack configurations
+├── TaskFlow.API/                  # Minimal API host: Program.cs, Endpoints, Middleware, Services
+├── TaskFlow.Application/          # DTOs, service interfaces, cart/order/checkout logic
+├── TaskFlow.Domain/               # Entities and domain constants
+├── TaskFlow.Infrastructure/       # EF Core DbContext, repositories, migrations, Stripe/Resend services
+├── TaskFlow.UnitTests/            # xUnit/Moq unit tests
+├── TaskFlow.IntegrationTests/     # Testcontainers PostgreSQL integration tests
+├── frontend/                      # React + Vite app
+│   └── src/
+│       ├── api/                   # Axios clients: auth, products, categories, cart, orders, stripe, admin
+│       ├── components/            # Navbar, layouts, route guards, shared UI
+│       ├── pages/                 # Storefront, checkout, orders, auth, admin, legal pages
+│       └── store/                 # Zustand stores: auth, cart, guest cart
+├── docs/                          # Documentation
+├── scripts/                       # backup-db.sh / restore-db.sh
+├── .github/workflows/deploy.yml   # Build/push images and deploy to the VPS
+├── Dockerfile                     # API image
+├── Dockerfile.frontend            # Frontend build + nginx image
+├── Dockerfile.migrator            # EF Core migrations bundle image
+├── nginx.conf                     # Frontend nginx reverse-proxy config
+├── docker-compose.dev.yml         # Local dev stack; builds images
+├── docker-compose.prod.yml        # Production stack; pulls DOCKER_IMAGE_* images
+├── docker-compose.yml             # Default compose file, same prod-style image flow
+├── Directory.Packages.props       # Central NuGet package versions
+├── global.json                    # .NET SDK pin
+└── stryker-config.json            # Mutation testing config
 ```
+
+Notes:
+
+- Env templates live in `.env.example`; real env files are `.env`, `.env.dev`, and `.env.prod` and must not be committed.
+- The root `package.json`/`node_modules` are not used by the app; frontend dependencies live in `frontend/package.json`.
+- `TaskFlow.IntegrationTestsIntegration/` is currently empty and can be ignored/removed.
 
 ## License
 
 Proprietary - All rights reserved.
+```

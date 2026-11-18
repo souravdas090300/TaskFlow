@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { productsApi } from '../api/products';
+import { productsApi, type ProductListItem } from '../api/products';
 import { Link } from 'react-router-dom';
 import heroImg from '../assets/hero.png';
 
@@ -42,15 +42,15 @@ const features = [
   },
 ];
 
-const ProductCard = ({ product }: { product: any }) => (
+const ProductCard = ({ product }: { product: ProductListItem }) => (
   <Link
     to={`/products/${product.slug}`}
     className="group bg-slate-900 border border-white/10 rounded-2xl overflow-hidden hover:border-purple-500/50 hover:shadow-[0_0_40px_-10px_rgba(139,92,246,0.4)] transition-all duration-300"
   >
     <div className="relative h-56 overflow-hidden bg-slate-800">
-      {product.images?.[0] ? (
+      {product.primaryImageUrl ? (
         <img
-          src={product.images[0].imageUrl}
+          src={product.primaryImageUrl}
           alt={product.name}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
         />
@@ -213,7 +213,7 @@ export const Home = () => {
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredProducts.slice(0, 6).map((p: any) => <ProductCard key={p.id} product={p} />)}
+            {featuredProducts.slice(0, 6).map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}
@@ -231,7 +231,7 @@ export const Home = () => {
             </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {newArrivals.slice(0, 6).map((p: any) => <ProductCard key={p.id} product={p} />)}
+            {newArrivals.slice(0, 6).map((p) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}
@@ -253,6 +253,21 @@ export const Home = () => {
           </Link>
         </div>
       </section>
+
+      {/* ===== FOOTER ===== */}
+      <footer className="border-t border-white/10 bg-slate-950">
+        <div className="container mx-auto px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+          <p>© {new Date().getFullYear()} TaskFlow. All rights reserved.</p>
+          <div className="flex gap-6">
+            <Link to="/privacy-policy" className="hover:text-purple-400 transition">
+              Privacy Policy
+            </Link>
+            <Link to="/terms-of-service" className="hover:text-purple-400 transition">
+              Terms of Service
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };
