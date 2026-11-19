@@ -60,7 +60,6 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
-builder.Services.AddScoped<TaskFlow.Application.Services.CheckoutService>();
 
 // Register repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
