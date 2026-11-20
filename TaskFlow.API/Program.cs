@@ -60,6 +60,7 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
+builder.Services.AddScoped<CheckoutService>();
 
 // Register repositories
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
@@ -94,6 +95,8 @@ builder.Services.AddOptions<OrderSettings>()
     .Validate(s => s.FreeShippingThreshold >= 0m, "OrderSettings:FreeShippingThreshold must be >= 0.")
     .Validate(s => s.ShippingCost >= 0m, "OrderSettings:ShippingCost must be >= 0.")
     .ValidateOnStart();
+
+builder.Services.AddSingleton<TimeProvider>(_ => TimeProvider.System);
 
 if (builder.Environment.IsDevelopment())
 {

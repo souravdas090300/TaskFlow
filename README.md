@@ -18,7 +18,6 @@ cp .env.example .env.dev    # used by the dev stack via env_file
 
 # Start API + frontend + PostgreSQL + migrator
 docker compose -f docker-compose.dev.yml up -d --build
-docker compose up -d --build
 ```
 
 Useful URLs:
@@ -82,13 +81,24 @@ sudo docker compose up -d
 
 `docker-compose.prod.yml`/`docker-compose.yml` consume prebuilt images via `DOCKER_IMAGE_*`; `--build` is only used by `docker-compose.dev.yml` or for local testing.
 
-Then in Nginx Proxy Manager (`http://92.5.144.125:81`), proxy `taskflow-das.duckdns.org` to `http://taskflow-frontend:80` (and use Custom Locations to route `/api` and `/health` to `http://taskflow-api:80`) and issue a Let's Encrypt certificate.
+Then in Nginx Proxy Manager (`http://92.5.144.125:81`), proxy `taskflow-das.duckdns.org` to `http://taskflow-frontend:80` and issue a Let's Encrypt certificate. The frontend nginx already routes `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API container.
 
 Full guides:
 
 - [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md)
 - [CI/CD Setup](docs/CI_CD_SETUP.md)
 - [Backup & Rollback](docs/BACKUP_AND_ROLLBACK.md)
+
+## Admin access
+
+There is no default admin account. Create or promote one on the server:
+
+```bash
+cd ~/TaskFlow
+bash scripts/create-admin.sh <email> <password> [firstName] [lastName]
+```
+
+The script registers through `/api/auth/register` if needed, then sets `Users.Role = 'Admin'` in Postgres. Sign in at `/admin/login` (admins who sign in through `/login` are redirected to `/admin`). For the dev compose DB use `DB_CONTAINER=taskflow-db-dev`.
 
 ## Architecture
 
@@ -98,7 +108,7 @@ Full guides:
 - **Auth**: JWT access/refresh tokens, email verification, password reset, and Google OAuth via ASP.NET Core authentication.
 - **Payments**: Stripe Checkout + webhooks with idempotent handling, `PaymentReview` stock-conflict flow, and an admin payment-issues API.
 - **Email**: Resend in production, mock email service in development.
-- **Edge**: Nginx Proxy Manager terminates HTTPS and routes traffic. It forwards `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API container, and all other traffic to the frontend container.
+- **Edge**: Nginx Proxy Manager terminates HTTPS and sends traffic to the frontend container; the frontend nginx proxies `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API.
 - **CI/CD**: GitHub Actions builds images in the cloud, pushes to GHCR, and deploys to the Oracle VPS.
 
 ## Features
@@ -108,7 +118,7 @@ Full guides:
 - Orders via Stripe or Cash on Delivery, cancellation, admin status/tracking
 - Stripe webhook idempotency, atomic stock decrement, payment issue tracking
 - Admin dashboard for stats, orders, products, categories, and payment issues
-- Public legal pages for Google OAuth review: `/privacy-policy` and `/terms-of-service`
+- Public legal pages for Google OAuth review: `/privacy-policy` and `/terms-of-service` (served as static HTML so verification bots can read them without JavaScript)
 - Rate limiting, global exception handling, forwarded headers
 - Docker Compose dev/prod stacks, ARM64 migration bundle, backup/restore scripts
 
@@ -144,7 +154,7 @@ TaskFlow/
 │       ├── pages/                 # Storefront, checkout, orders, auth, admin, legal pages
 │       └── store/                 # Zustand stores: auth, cart, guest cart
 ├── docs/                          # Documentation
-├── scripts/                       # backup-db.sh / restore-db.sh
+├── scripts/                       # backup-db.sh / restore-db.sh / create-admin.sh
 ├── .github/workflows/deploy.yml   # Build/push images and deploy to the VPS
 ├── Dockerfile                     # API image
 ├── Dockerfile.frontend            # Frontend build + nginx image
@@ -167,4 +177,3 @@ Notes:
 ## License
 
 Proprietary - All rights reserved.
-```
