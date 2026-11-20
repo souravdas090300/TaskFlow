@@ -1,5 +1,5 @@
 import { useState, type SubmitEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { categoriesApi } from '../api/products';
 import { useAuthStore } from '../store/useAuthStore';
@@ -9,6 +9,8 @@ import { useThemeStore } from '../store/useThemeStore';
 
 export const Navbar = () => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const isRegisterPage = pathname === '/register';
   const { user, logout, isAuthenticated } = useAuthStore();
   const items = useCartStore((state) => state.items);
   const guestCount = useGuestCartStore((state) => state.totalItems());
@@ -119,7 +121,9 @@ export const Navbar = () => {
             ) : (
               <div className="hidden sm:flex items-center gap-2">
                 <Link to="/login" className="px-3 py-2 text-sm font-semibold text-purple-700 dark:text-purple-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-lg">Login</Link>
-                <Link to="/register" className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700">Register</Link>
+                {!isRegisterPage && (
+                  <Link to="/register" className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700">Register</Link>
+                )}
               </div>
             )}
 
@@ -156,7 +160,9 @@ export const Navbar = () => {
             ) : (
               <>
                 <Link to="/login" onClick={() => setMobileOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-300">Login</Link>
-                <Link to="/register" onClick={() => setMobileOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-semibold bg-purple-600 text-white text-center">Register</Link>
+                {!isRegisterPage && (
+                  <Link to="/register" onClick={() => setMobileOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-semibold bg-purple-600 text-white text-center">Register</Link>
+                )}
               </>
             )}
           </div>
