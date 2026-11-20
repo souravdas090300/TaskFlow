@@ -23,7 +23,10 @@ public class CartRepository : ICartRepository
     {
         return await _context.Carts
             .Include(c => c.Items)
-            .ThenInclude(i => i.Product)
+                .ThenInclude(i => i.Product)
+                    .ThenInclude(p => p.Images)
+            .Include(c => c.Items)
+                .ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(c => c.UserId == userId);
     }
 
@@ -38,7 +41,15 @@ public class CartRepository : ICartRepository
 
     public async Task UpdateAsync(Cart cart)
     {
-        _context.Carts.Update(cart);
+        foreach (var item in cart.Items)
+        {
+            var entry = _context.Entry(item);
+            if (entry.State == EntityState.Detached)
+            {
+                entry.State = EntityState.Added;
+            }
+        }
+
         await _context.SaveChangesAsync();
     }
 

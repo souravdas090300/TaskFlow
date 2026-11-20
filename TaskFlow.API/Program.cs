@@ -179,7 +179,7 @@ if (!builder.Environment.IsDevelopment())
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "TaskFlow";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "TaskFlowUsers";
 
-builder.Services.AddAuthentication(options =>
+var authenticationBuilder = builder.Services.AddAuthentication(options =>
 {
     options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -197,25 +197,30 @@ builder.Services.AddAuthentication(options =>
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
         ClockSkew = TimeSpan.Zero
     };
-})
-// Add Google Authentication Here:
-.AddGoogle(options =>
-{
-    options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "";
-    options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "";
-
-    options.CallbackPath = "/signin-google";
-
-    if (!builder.Environment.IsDevelopment() && !string.IsNullOrEmpty(appPublicUrl))
-    {
-        var googleRedirectUri = new Uri(new Uri(appPublicUrl), "/signin-google").ToString();
-        options.Events.OnRedirectToAuthorizationEndpoint = context =>
-        {
-            context.RedirectUri = googleRedirectUri;
-            return Task.CompletedTask;
-        };
-    }
 });
+
+var googleClientId = builder.Configuration["Authentication:Google:ClientId"];
+var googleClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(googleClientSecret))
+{
+    authenticationBuilder.AddGoogle(options =>
+    {
+        options.ClientId = googleClientId;
+        options.ClientSecret = googleClientSecret;
+
+        options.CallbackPath = "/signin-google";
+
+        if (!builder.Environment.IsDevelopment() && !string.IsNullOrEmpty(appPublicUrl))
+        {
+            var googleRedirectUri = new Uri(new Uri(appPublicUrl), "/signin-google").ToString();
+            options.Events.OnRedirectToAuthorizationEndpoint = context =>
+            {
+                context.RedirectUri = googleRedirectUri;
+                return Task.CompletedTask;
+            };
+        }
+    });
+}
 
 builder.Services.AddAuthorization();
 
