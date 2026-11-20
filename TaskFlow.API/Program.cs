@@ -1066,7 +1066,7 @@ app.MapGet("/logout", (HttpContext context, string? returnUrl = "/") =>
     context.SignOutAsync(JwtBearerDefaults.AuthenticationScheme).Wait();
     return Results.Redirect(returnUrl ?? "/");
 })
-    .WithName("Logout")
+    .WithName("LogoutRedirect")
     .AllowAnonymous();
 
 // SPA routing fallback - return index.html for non-API routes
