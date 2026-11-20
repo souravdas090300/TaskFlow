@@ -31,6 +31,7 @@ public class CategoryService
                 ImageUrl = c.ImageUrl,
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,
+                DisplayOrder = c.DisplayOrder,
                 ProductCount = c.Products.Count(p => p.IsActive)
             })
             .ToListAsync();
@@ -122,6 +123,7 @@ public class CategoryService
             Description = dto.Description,
             ParentCategoryId = dto.ParentCategoryId,
             ImageUrl = dto.ImageUrl,
+            DisplayOrder = dto.DisplayOrder,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -143,6 +145,7 @@ public class CategoryService
         category.Description = dto.Description;
         category.ParentCategoryId = dto.ParentCategoryId;
         category.ImageUrl = dto.ImageUrl;
+        category.DisplayOrder = dto.DisplayOrder;
         category.IsActive = dto.IsActive;
         category.UpdatedAt = DateTime.UtcNow;
 
@@ -178,6 +181,7 @@ public class CategoryService
                 ImageUrl = c.ImageUrl,
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,
+                DisplayOrder = c.DisplayOrder,
                 ProductCount = c.Products.Count(p => p.IsActive)
             })
             .ToListAsync();
@@ -199,6 +203,7 @@ public class CategoryService
                 ImageUrl = c.ImageUrl,
                 IsActive = c.IsActive,
                 CreatedAt = c.CreatedAt,
+                DisplayOrder = c.DisplayOrder,
                 ProductCount = c.Products.Count(p => p.IsActive)
             })
             .ToListAsync();

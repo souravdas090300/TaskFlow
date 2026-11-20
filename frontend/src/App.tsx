@@ -23,6 +23,8 @@ import AdminDashboard from './pages/AdminDashboard';
 import { AdminLogin } from './pages/AdminLogin';
 import AdminOrders from './pages/AdminOrders';
 import AdminPaymentIssues from './pages/AdminPaymentIssues';
+import AdminProducts from './pages/AdminProducts';
+import AdminCategories from './pages/AdminCategories';
 import { useAuthStore } from './store/useAuthStore';
 import { useEffect } from 'react';
 
@@ -86,6 +88,8 @@ function App() {
           }>
             <Route index element={<AdminDashboard />} />
             <Route path="orders" element={<AdminOrders />} />
+            <Route path="products" element={<AdminProducts />} />
+            <Route path="categories" element={<AdminCategories />} />
             <Route path="payment-issues" element={<AdminPaymentIssues />} />
           </Route>
         </Routes>

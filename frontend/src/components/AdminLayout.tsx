@@ -36,6 +36,12 @@ export const AdminLayout = () => {
               <NavLink to="/admin/orders" className={navLinkClass}>
                 Orders
               </NavLink>
+              <NavLink to="/admin/products" className={navLinkClass}>
+                Products
+              </NavLink>
+              <NavLink to="/admin/categories" className={navLinkClass}>
+                Categories
+              </NavLink>
               <NavLink to="/admin/payment-issues" className={navLinkClass}>
                 Payment Issues
               </NavLink>
@@ -61,6 +67,12 @@ export const AdminLayout = () => {
           </NavLink>
           <NavLink to="/admin/orders" className={navLinkClass}>
             Orders
+          </NavLink>
+          <NavLink to="/admin/products" className={navLinkClass}>
+            Products
+          </NavLink>
+          <NavLink to="/admin/categories" className={navLinkClass}>
+            Categories
           </NavLink>
           <NavLink to="/admin/payment-issues" className={navLinkClass}>
             Payment Issues
