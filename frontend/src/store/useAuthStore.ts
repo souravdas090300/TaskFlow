@@ -11,6 +11,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: (credential: string) => Promise<void>;
   register: (email: string, password: string, firstName: string, lastName: string) => Promise<void>;
+  setUser: (user: User | null) => void;
   logout: () => void;
   loadUser: () => Promise<void>;
 }
@@ -39,6 +40,8 @@ export const useAuthStore = create<AuthState>()(
         set({ user: data.user, token: data.token, isAuthenticated: true });
         void mergeGuestCartIntoAccount();
       },
+
+      setUser: (user) => set({ user, isAuthenticated: !!user }),
 
       logout: () => {
         authApi.logout();

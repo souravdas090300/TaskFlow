@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ordersApi } from '../api/orders';
 import { confirmCashOnDelivery, startStripeCheckout } from '../api/stripe';
 import { useCartStore } from '../store/useCartStore';
 import { useNavigate } from 'react-router-dom';
 import { formatPrice } from '../utils/format';
+import { AddressForm } from '../components/AddressForm';
+import { getApiErrorMessage } from '../utils/errors';
+import type { AddressDto } from '../api/addresses';
 
 export const Checkout = () => {
   const { data: checkout } = useQuery({
@@ -12,19 +15,33 @@ export const Checkout = () => {
     queryFn: () => ordersApi.getCheckout(),
   });
 
+  const queryClient = useQueryClient();
   const { clearCart } = useCartStore();
   const navigate = useNavigate();
   const [selectedAddress, setSelectedAddress] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('Stripe');
-
+  const [showAddressForm, setShowAddressForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const shippingAddresses = (checkout?.addresses ?? []).filter((address) => address.type === 'Shipping');
+
+  const preferredAddress = shippingAddresses.find((address) => address.isDefault) ?? shippingAddresses[0];
+  const effectiveAddress = selectedAddress || preferredAddress?.id || '';
+
+  const handleAddressSaved = (address: AddressDto) => {
+    setSelectedAddress(address.id);
+    setShowAddressForm(false);
+    void queryClient.invalidateQueries({ queryKey: ['checkout'] });
+  };
 
   const handleCheckout = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
+    setError('');
     try {
       const order = await ordersApi.createOrder({
-        shippingAddressId: selectedAddress,
+        shippingAddressId: effectiveAddress,
         paymentMethod,
       });
       void clearCart();
@@ -35,9 +52,8 @@ export const Checkout = () => {
         const url = await startStripeCheckout(order.id);
         window.location.assign(url); // leave the SPA for Stripe's hosted page
       }
-    } catch {
-      // Alert user of checkout failure
-      alert('Checkout failed');
+    } catch (checkoutError) {
+      setError(getApiErrorMessage(checkoutError, 'Checkout failed'));
       setIsSubmitting(false);
     }
   };
@@ -51,19 +67,44 @@ export const Checkout = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
           <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
             <h2 className="text-xl font-bold mb-4">Shipping Address</h2>
-            <select
-              value={selectedAddress}
-              onChange={(e) => setSelectedAddress(e.target.value)}
-              className="w-full px-4 py-2 border rounded-lg mb-4"
-              required
-            >
-              <option value="">Select an address</option>
-              {checkout.addresses.map((addr) => (
-                <option key={addr.id} value={addr.id}>
-                  {addr.firstName} {addr.lastName} - {addr.addressLine1}
-                </option>
-              ))}
-            </select>
+
+            {shippingAddresses.length > 0 && (
+              <>
+                <select
+                  value={effectiveAddress}
+                  onChange={(e) => setSelectedAddress(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg mb-3"
+                  required
+                >
+                  <option value="">Select an address</option>
+                  {shippingAddresses.map((addr) => (
+                    <option key={addr.id} value={addr.id}>
+                      {addr.firstName} {addr.lastName} - {addr.addressLine1}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowAddressForm((value) => !value)}
+                  className="text-sm font-semibold text-purple-600 hover:text-purple-700"
+                >
+                  {showAddressForm ? 'Hide new address form' : 'Add new address'}
+                </button>
+              </>
+            )}
+
+            {(showAddressForm || shippingAddresses.length === 0) && (
+              <div className="mt-4 rounded-lg border border-gray-200 dark:border-white/10 p-4 bg-gray-50 dark:bg-slate-800/60">
+                <AddressForm
+                  defaultType="Shipping"
+                  showType={false}
+                  defaultIsDefault={shippingAddresses.length === 0}
+                  submitLabel={shippingAddresses.length === 0 ? 'Save & use address' : 'Save address'}
+                  onSaved={handleAddressSaved}
+                  onCancel={shippingAddresses.length === 0 ? undefined : () => setShowAddressForm(false)}
+                />
+              </div>
+            )}
 
             <h2 className="text-xl font-bold mb-4 mt-6">Payment Method</h2>
             <select
@@ -75,12 +116,18 @@ export const Checkout = () => {
               <option value="CashOnDelivery">Cash on Delivery</option>
             </select>
 
+            {error && (
+              <div className="mt-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+                {error}
+              </div>
+            )}
+
             <button
               onClick={handleCheckout}
-              disabled={!selectedAddress || isSubmitting}
+              disabled={!effectiveAddress || isSubmitting}
               className="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700 transition mt-6 disabled:bg-gray-400"
             >
-              Place Order
+              {isSubmitting ? 'Placing order...' : 'Place Order'}
             </button>
           </div>
 

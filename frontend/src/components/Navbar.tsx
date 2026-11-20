@@ -113,6 +113,7 @@ export const Navbar = () => {
                 </button>
                 {accountOpen && (
                   <div className="absolute right-0 mt-1 w-44 rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-900 shadow-xl py-2">
+                    <Link to="/profile" onClick={() => setAccountOpen(false)} className="block px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-white/5">Profile</Link>
                     <Link to="/orders" onClick={() => setAccountOpen(false)} className="block px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-white/5">Orders</Link>
                     <button type="button" onClick={logout} className="w-full text-left px-4 py-2 text-sm text-purple-700 dark:text-purple-300 hover:bg-gray-100 dark:hover:bg-white/5">Logout</button>
                   </div>
@@ -154,6 +155,7 @@ export const Navbar = () => {
             ))}
             {isAuthenticated ? (
               <>
+                <Link to="/profile" onClick={() => setMobileOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-white/5">Profile</Link>
                 <Link to="/orders" onClick={() => setMobileOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-white/5">Orders</Link>
                 <button type="button" onClick={logout} className="w-full text-left px-3 py-2 rounded-lg text-sm font-semibold text-purple-700 dark:text-purple-300">Logout</button>
               </>

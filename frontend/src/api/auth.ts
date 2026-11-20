@@ -23,6 +23,13 @@ export interface RegisterData {
   lastName: string;
 }
 
+export interface UpdateProfileData {
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  avatarUrl?: string;
+}
+
 export interface AuthResponse {
   token: string;
   expiration: string;
@@ -80,6 +87,16 @@ export const authApi = {
   getCurrentUser: async (): Promise<User> => {
     const response = await api.get('/auth/me');
     return response.data;
+  },
+
+  updateProfile: async (data: UpdateProfileData): Promise<User> => {
+    const response = await api.put('/auth/me', data);
+    localStorage.setItem('user', JSON.stringify(response.data));
+    return response.data;
+  },
+
+  changePassword: async (data: { currentPassword: string; newPassword: string }): Promise<void> => {
+    await api.post('/auth/change-password', data);
   },
 
   forgotPassword: async (email: string): Promise<void> => {

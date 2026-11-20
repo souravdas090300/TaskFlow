@@ -1,22 +1,8 @@
 import api from './client';
 import type { CartItem } from './cart';
+import type { AddressDto } from './addresses';
 
-export interface AddressDto {
-  id: string;
-  userId: string;
-  type: 'Shipping' | 'Billing' | string;
-  firstName: string;
-  lastName: string;
-  addressLine1: string;
-  addressLine2?: string;
-  city: string;
-  state: string;
-  postalCode: string;
-  country: string;
-  phone?: string;
-  isDefault: boolean;
-  createdAt: string;
-}
+export type { AddressDto } from './addresses';
 
 export interface OrderItem {
   id: string;

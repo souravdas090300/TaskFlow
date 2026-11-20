@@ -38,6 +38,9 @@ public class OrderService
         var cart = await _context.Carts
             .Include(c => c.Items)
             .ThenInclude(i => i.Product)
+            .ThenInclude(p => p.Images)
+            .Include(c => c.Items)
+            .ThenInclude(i => i.ProductVariant)
             .FirstOrDefaultAsync(c => c.UserId == userId);
 
         if (cart == null) return null;
@@ -76,11 +79,16 @@ public class OrderService
             Items = cart.Items.Select(i => new CartItemDto
             {
                 Id = i.Id,
+                CartId = cart.Id,
                 ProductId = i.ProductId,
-                ProductName = i.Product.Name,
-                ProductImage = i.Product.Images.FirstOrDefault()?.ImageUrl,
+                ProductName = i.Product?.Name ?? string.Empty,
+                ProductImageUrl = i.Product?.Images?.FirstOrDefault(img => img.IsPrimary)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl,
+                ProductImage = i.Product?.Images?.FirstOrDefault(img => img.IsPrimary)?.ImageUrl ?? i.Product?.Images?.FirstOrDefault()?.ImageUrl,
+                ProductVariantId = i.ProductVariantId,
+                VariantName = i.ProductVariant != null ? $"{i.ProductVariant.Size} / {i.ProductVariant.Color}" : null,
                 Quantity = i.Quantity,
                 UnitPrice = i.UnitPrice,
+                TotalPrice = i.UnitPrice * i.Quantity,
                 Total = i.UnitPrice * i.Quantity
             }).ToList(),
             Subtotal = subtotal,
