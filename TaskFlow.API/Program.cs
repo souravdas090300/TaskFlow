@@ -39,7 +39,7 @@ builder.Services.AddOpenApi();
 // Configure JSON options to handle PATCH requests properly
 builder.Services.Configure<Microsoft.AspNetCore.Http.Json.JsonOptions>(options =>
 {
-    options.SerializerOptions.PropertyNamingPolicy = null; // Use exact property names
+    options.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase; // Match the React client's camelCase JSON
     options.SerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
 });
 
