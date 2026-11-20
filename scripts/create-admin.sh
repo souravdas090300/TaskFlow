@@ -55,8 +55,9 @@ fi
 
 docker exec -i "$DB_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME" \
   -v ON_ERROR_STOP=1 \
-  -v email="$EMAIL" \
-  -c "UPDATE \"Users\" SET \"Role\"='Admin' WHERE \"Email\" = :'email';"
+  -v email="$EMAIL" <<'SQL'
+UPDATE "Users" SET "Role"='Admin' WHERE "Email" = :'email';
+SQL
 
 echo "Admin ready: $EMAIL"
 echo "Sign in at: $BASE_URL/admin/login"
