@@ -81,7 +81,7 @@ sudo docker compose up -d
 
 `docker-compose.prod.yml`/`docker-compose.yml` consume prebuilt images via `DOCKER_IMAGE_*`; `--build` is only used by `docker-compose.dev.yml` or for local testing.
 
-Then in Nginx Proxy Manager (`http://92.5.144.125:81`), proxy `taskflow-das.duckdns.org` to `http://taskflow-frontend:80` and issue a Let's Encrypt certificate. The frontend nginx already routes `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API container.
+Then in Nginx Proxy Manager (`http://92.5.144.125:81`), proxy `taskflow-das.duckdns.org` to `http://taskflow-frontend:80` and issue a Let's Encrypt certificate. The frontend nginx already routes `/api`, `/health`, `/weatherforecast`, and `/signin-google` to the API container.
 
 Full guides:
 
@@ -108,7 +108,7 @@ The script registers through `/api/auth/register` if needed, then sets `Users.Ro
 - **Auth**: JWT access/refresh tokens, email verification, password reset, and Google OAuth via ASP.NET Core authentication.
 - **Payments**: Stripe Checkout + webhooks with idempotent handling, `PaymentReview` stock-conflict flow, and an admin payment-issues API.
 - **Email**: Resend in production, mock email service in development.
-- **Edge**: Nginx Proxy Manager terminates HTTPS and sends traffic to the frontend container; the frontend nginx proxies `/api`, `/health`, `/login`, `/logout`, `/auth/user`, and `/signin-google` to the API.
+- **Edge**: Nginx Proxy Manager terminates HTTPS and sends traffic to the frontend container; the frontend nginx proxies `/api`, `/health`, `/weatherforecast`, and `/signin-google` to the API.
 - **CI/CD**: GitHub Actions builds images in the cloud, pushes to GHCR, and deploys to the Oracle VPS.
 
 ## Features
