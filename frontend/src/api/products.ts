@@ -73,7 +73,7 @@ export interface Category {
 }
 
 export const productsApi = {
-  getAll: async (params?: { page?: number; pageSize?: number; search?: string; category?: string; minPrice?: number; maxPrice?: number; sortBy?: string }): Promise<ProductListItem[]> => {
+  getAll: async (params?: { page?: number; pageSize?: number; search?: string; categoryId?: string; minPrice?: number; maxPrice?: number; sortBy?: string }): Promise<ProductListItem[]> => {
     const response = await api.get<ProductListItem[]>('/products', { params });
     return response.data;
   },

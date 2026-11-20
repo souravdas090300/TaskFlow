@@ -9,7 +9,7 @@ export const Shop = () => {
 
   const { data: products } = useQuery({
     queryKey: ['products', search, category],
-    queryFn: () => productsApi.getAll({ search, category }),
+    queryFn: () => productsApi.getAll({ search: search || undefined, categoryId: category || undefined }),
   });
 
   const { data: categories } = useQuery({
