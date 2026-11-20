@@ -57,6 +57,9 @@ npm test
 npm run lint
 npm run build
 ```
+Database migrations are handled by the migrator service defined in 'docker-compose.dev.yml'
+
+migration: dotnet ef migrations list --project TaskFlow.Infrastructure --startup-project TaskFlow.API
 
 ## Production deployment
 
