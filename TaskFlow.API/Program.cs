@@ -57,6 +57,7 @@ builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<Ap
 builder.Services.AddScoped<ProductService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddSingleton<GoogleTokenValidator>();
 builder.Services.AddScoped<TaskFlow.Application.Services.CartService>();
 builder.Services.AddScoped<AddressService>();
 builder.Services.AddScoped<OrderService>();
@@ -507,6 +508,15 @@ app.MapPost("/api/auth/login", async (LoginDto dto, AuthService authService) =>
     return Results.Ok(result);
 })
     .WithName("JwtLogin")
+    .AllowAnonymous();
+
+// Google sign-in/sign-up using a Google Identity Services ID token
+app.MapPost("/api/auth/google", async (GoogleLoginDto dto, AuthService authService) =>
+{
+    var result = await authService.LoginWithGoogleAsync(dto.Credential);
+    return result == null ? Results.Unauthorized() : Results.Ok(result);
+})
+    .WithName("GoogleLogin")
     .AllowAnonymous();
 
 // Get current user

@@ -18,14 +18,16 @@ public class AuthService
     private readonly IConfiguration _configuration;
     private readonly IEmailService _email;
     private readonly ILogger<AuthService> _logger;
+    private readonly GoogleTokenValidator _googleTokens;
 
     public AuthService(ApplicationDbContext context, IConfiguration configuration,
-        IEmailService email, ILogger<AuthService> logger)
+        IEmailService email, ILogger<AuthService> logger, GoogleTokenValidator googleTokens)
     {
         _context = context;
         _configuration = configuration;
         _email = email;
         _logger = logger;
+        _googleTokens = googleTokens;
     }
 
     public async Task<AuthResponseDto?> RegisterAsync(RegisterDto dto)
@@ -83,7 +85,7 @@ public class AuthService
         }
 
         // Verify password
-        if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
+        if (user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
             return null;
         }
@@ -95,6 +97,87 @@ public class AuthService
         }
 
         // Generate tokens (JWT + refresh)
+        var (token, expiration, refreshToken, refreshExpiry) = await IssueTokensAsync(user);
+
+        return new AuthResponseDto
+        {
+            Token = token,
+            Expiration = expiration,
+            RefreshToken = refreshToken,
+            RefreshTokenExpiresAt = refreshExpiry,
+            User = MapToUserDto(user)
+        };
+    }
+
+    public async Task<AuthResponseDto?> LoginWithGoogleAsync(string idToken)
+    {
+        var principal = await _googleTokens.ValidateAsync(idToken);
+        if (principal is null)
+            return null;
+
+        var googleId = principal.FindFirst("sub")?.Value;
+        var email = principal.FindFirst("email")?.Value;
+        if (string.IsNullOrWhiteSpace(googleId) || string.IsNullOrWhiteSpace(email))
+            return null;
+
+        var emailVerified = bool.TryParse(principal.FindFirst("email_verified")?.Value, out var verified) && verified;
+        var firstName = principal.FindFirst("given_name")?.Value ?? string.Empty;
+        var lastName = principal.FindFirst("family_name")?.Value ?? string.Empty;
+        var name = principal.FindFirst("name")?.Value;
+        var picture = principal.FindFirst("picture")?.Value;
+
+        var nameParts = (name ?? $"{firstName} {lastName}").Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var resolvedFirstName = firstName.Length > 0 ? firstName : nameParts.FirstOrDefault() ?? "Customer";
+        var resolvedLastName = lastName.Length > 0 ? lastName : nameParts.Skip(1).FirstOrDefault() ?? string.Empty;
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.GoogleId == googleId);
+        if (user is null)
+            user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+
+        if (user is null)
+        {
+            user = new User
+            {
+                Id = Guid.NewGuid(),
+                Email = email,
+                PasswordHash = null,
+                GoogleId = googleId,
+                FirstName = resolvedFirstName,
+                LastName = resolvedLastName,
+                Name = name ?? $"{resolvedFirstName} {resolvedLastName}".Trim(),
+                AvatarUrl = picture,
+                PictureUrl = picture,
+                Role = "Customer",
+                EmailVerified = emailVerified,
+                IsEmailVerified = emailVerified,
+                EmailVerifiedAt = emailVerified ? DateTime.UtcNow : null,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Users.Add(user);
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(user.GoogleId))
+                user.GoogleId = googleId;
+            if (string.IsNullOrWhiteSpace(user.FirstName) && !string.IsNullOrWhiteSpace(resolvedFirstName))
+                user.FirstName = resolvedFirstName;
+            if (string.IsNullOrWhiteSpace(user.LastName) && !string.IsNullOrWhiteSpace(resolvedLastName))
+                user.LastName = resolvedLastName;
+            if (string.IsNullOrWhiteSpace(user.Name) && !string.IsNullOrWhiteSpace(name))
+                user.Name = name;
+            user.AvatarUrl ??= picture;
+            user.PictureUrl ??= picture;
+            if (emailVerified && !user.EmailVerified)
+            {
+                user.EmailVerified = true;
+                user.IsEmailVerified = true;
+                user.EmailVerifiedAt ??= DateTime.UtcNow;
+            }
+            user.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
         var (token, expiration, refreshToken, refreshExpiry) = await IssueTokensAsync(user);
 
         return new AuthResponseDto
@@ -168,7 +251,7 @@ public class AuthService
         if (user == null) return false;
 
         // Verify current password
-        if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+        if (user.PasswordHash is null || !BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
         {
             return false;
         }

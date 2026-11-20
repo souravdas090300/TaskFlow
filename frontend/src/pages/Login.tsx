@@ -1,6 +1,7 @@
 import { useState, type SubmitEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -51,6 +52,20 @@ export const Login = () => {
             Login
           </button>
         </form>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-sm text-gray-500">or</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+        <GoogleAuthButton
+          onSuccess={() => {
+            const user = useAuthStore.getState().user;
+            void navigate(user?.role === 'Admin' ? '/admin' : '/');
+          }}
+          onError={(message) => alert(message)}
+        />
+
         <p className="mt-4 text-center text-sm">
           <Link to="/forgot-password" className="text-purple-600">Forgot password?</Link>
         </p>

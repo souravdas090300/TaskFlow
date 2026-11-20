@@ -1,6 +1,7 @@
 import { useState, type SubmitEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/useAuthStore';
+import { GoogleAuthButton } from '../components/GoogleAuthButton';
 
 export const Register = () => {
   const [email, setEmail] = useState('');
@@ -75,6 +76,17 @@ export const Register = () => {
             Register
           </button>
         </form>
+
+        <div className="my-6 flex items-center gap-3">
+          <div className="h-px flex-1 bg-gray-200" />
+          <span className="text-sm text-gray-500">or</span>
+          <div className="h-px flex-1 bg-gray-200" />
+        </div>
+        <GoogleAuthButton
+          onSuccess={() => void navigate('/')}
+          onError={(message) => alert(message)}
+        />
+
         <p className="mt-4 text-center text-sm">
           Already have an account? <Link to="/login" className="text-purple-600">Login</Link>
         </p>

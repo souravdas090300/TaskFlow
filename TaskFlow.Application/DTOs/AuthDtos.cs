@@ -75,6 +75,12 @@ public class RefreshTokenRequestDto
     public string RefreshToken { get; set; } = string.Empty;
 }
 
+public class GoogleLoginDto
+{
+    [Required]
+    public string Credential { get; set; } = string.Empty;
+}
+
 public class AuthResponseDto
 {
     public string Token { get; set; } = string.Empty;

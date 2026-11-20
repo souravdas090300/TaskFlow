@@ -40,6 +40,14 @@ export const authApi = {
     return response.data;
   },
 
+  googleLogin: async (credential: string): Promise<AuthResponse> => {
+    const response = await api.post('/auth/google', { credential });
+    localStorage.setItem('token', response.data.token);
+    localStorage.setItem('refreshToken', response.data.refreshToken);
+    localStorage.setItem('user', JSON.stringify(response.data.user));
+    return response.data;
+  },
+
   register: async (data: RegisterData): Promise<AuthResponse> => {
     const response = await api.post('/auth/register', data);
     localStorage.setItem('token', response.data.token);
