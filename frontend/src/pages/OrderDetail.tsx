@@ -1,8 +1,8 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ordersApi } from '../api/orders';
 import { startStripeCheckout } from '../api/stripe';
-import { Link } from 'react-router-dom';
+import { formatPrice } from '../utils/format';
 import { useState } from 'react';
 
 export const OrderDetail = () => {
@@ -36,12 +36,12 @@ export const OrderDetail = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8">
       <div className="container mx-auto px-4">
         <Link to="/orders" className="text-purple-600 mb-4 inline-block">
           ← Back to Orders
         </Link>
-        <div className="bg-white rounded-lg shadow-md p-8 mt-4">
+        <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 mt-4 border border-gray-200 dark:border-white/10">
           <div className="flex justify-between items-start mb-6">
             <div>
               <h1 className="text-2xl font-bold">{order.orderNumber}</h1>
@@ -68,7 +68,7 @@ export const OrderDetail = () => {
             {order.items.map((item) => (
               <div key={item.id} className="flex justify-between py-2 border-b">
                 <span>{item.productName} x {item.quantity}</span>
-                <span>${item.total.toFixed(2)}</span>
+                <span>{formatPrice(item.total)}</span>
               </div>
             ))}
           </div>
@@ -76,19 +76,19 @@ export const OrderDetail = () => {
           <div className="border-t pt-4">
             <div className="flex justify-between mb-2">
               <span>Subtotal:</span>
-              <span>${order.subtotal.toFixed(2)}</span>
+              <span>{formatPrice(order.subtotal)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span>Tax:</span>
-              <span>${order.tax.toFixed(2)}</span>
+              <span>{formatPrice(order.tax)}</span>
             </div>
             <div className="flex justify-between mb-2">
               <span>Shipping:</span>
-              <span>${order.shipping.toFixed(2)}</span>
+              <span>{formatPrice(order.shipping)}</span>
             </div>
             <div className="flex justify-between font-bold text-xl mt-4 pt-4 border-t">
               <span>Total:</span>
-              <span>${order.total.toFixed(2)}</span>
+              <span>{formatPrice(order.total)}</span>
             </div>
           </div>
         </div>

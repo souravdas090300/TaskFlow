@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import { Link } from 'react-router-dom';
+import { formatPrice } from '../utils/format';
 
 export default function AdminDashboard() {
   const { data: stats, isLoading, error } = useQuery({
@@ -23,7 +24,7 @@ export default function AdminDashboard() {
 
         <div className="bg-white p-6 rounded-lg shadow-md">
           <h3 className="text-gray-600 text-sm font-medium">Total Revenue</h3>
-          <p className="text-3xl font-bold text-green-600">${stats?.totalRevenue?.toFixed(2) || '0.00'}</p>
+          <p className="text-3xl font-bold text-green-600">{formatPrice(stats?.totalRevenue ?? 0)}</p>
         </div>
 
         <div className="bg-white p-6 rounded-lg shadow-md">

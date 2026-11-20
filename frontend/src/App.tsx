@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { AdminRoute } from './components/AdminRoute';
 import { AdminLayout } from './components/AdminLayout';
 import { Navbar } from './components/Navbar';
+import { DemoBanner } from './components/DemoBanner';
 import { Home } from './pages/Home';
 import { Shop } from './pages/Shop';
 import { ProductDetail } from './pages/ProductDetail';
@@ -26,6 +27,7 @@ import AdminPaymentIssues from './pages/AdminPaymentIssues';
 import AdminProducts from './pages/AdminProducts';
 import AdminCategories from './pages/AdminCategories';
 import { useAuthStore } from './store/useAuthStore';
+import { applyTheme, useThemeStore } from './store/useThemeStore';
 import { useEffect } from 'react';
 
 const queryClient = new QueryClient();
@@ -39,13 +41,19 @@ function ConditionalNavbar() {
 
 function App() {
   const loadUser = useAuthStore((state) => state.loadUser);
+  const mode = useThemeStore((state) => state.mode);
 
   useEffect(() => {
     void loadUser();
   }, [loadUser]);
 
+  useEffect(() => {
+    applyTheme(mode);
+  }, [mode]);
+
   return (
     <QueryClientProvider client={queryClient}>
+      <DemoBanner />
       <Router>
         <ConditionalNavbar />
         <Routes>

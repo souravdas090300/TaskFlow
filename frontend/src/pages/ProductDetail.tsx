@@ -4,6 +4,7 @@ import { productsApi } from '../api/products';
 import { useCartStore } from '../store/useCartStore';
 import { useGuestCartStore } from '../store/useGuestCartStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { formatPrice } from '../utils/format';
 
 export const ProductDetail = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -33,12 +34,12 @@ export const ProductDetail = () => {
   if (!product) return <div>Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8">
       <div className="container mx-auto px-4">
         <Link to="/shop" className="text-purple-600 mb-4 inline-block">
           ← Back to Shop
         </Link>
-        <div className="bg-white rounded-lg shadow-md p-8 mt-4">
+        <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 mt-4 border border-gray-200 dark:border-white/10">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
               {product.images[0] && (
@@ -51,8 +52,8 @@ export const ProductDetail = () => {
             </div>
             <div>
               <h1 className="text-3xl font-bold mb-4">{product.name}</h1>
-              <p className="text-3xl text-purple-600 font-bold mb-4">
-                ${product.price.toFixed(2)}
+              <p className="text-3xl text-purple-600 dark:text-purple-400 font-bold mb-4">
+                {formatPrice(product.price)}
               </p>
               <p className="text-gray-600 mb-4">{product.description}</p>
               <p className="text-sm text-gray-500 mb-4">Stock: {product.stock}</p>

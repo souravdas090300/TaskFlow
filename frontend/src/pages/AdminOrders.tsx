@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../api/admin';
 import type { OrderDto } from '../api/orders';
+import { formatPrice } from '../utils/format';
 import { useState } from 'react';
 
 export default function AdminOrders() {
@@ -79,7 +80,7 @@ export default function AdminOrders() {
                   <div className="text-sm text-gray-900">{order.userEmail || 'N/A'}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">${order.total.toFixed(2)}</div>
+                  <div className="text-sm font-medium text-gray-900">{formatPrice(order.total)}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <select

@@ -2,6 +2,7 @@ import { useCartStore } from '../store/useCartStore';
 import { useGuestCartStore } from '../store/useGuestCartStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { Link } from 'react-router-dom';
+import { formatPrice } from '../utils/format';
 
 export const Cart = () => {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -10,7 +11,7 @@ export const Cart = () => {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gray-50 py-8">
+      <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8">
         <div className="container mx-auto px-4">
           <h1 className="text-3xl font-bold mb-8">Shopping Cart</h1>
           {guest.items.length === 0 ? (
@@ -21,7 +22,7 @@ export const Cart = () => {
               </Link>
             </div>
           ) : (
-            <div className="bg-white rounded-lg shadow-md p-8">
+            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
               {guest.items.map((item) => (
                 <div key={item.productId} className="flex items-center gap-4 py-4 border-b">
                   {item.imageUrl && (
@@ -29,7 +30,7 @@ export const Cart = () => {
                   )}
                   <div className="flex-1">
                     <h3 className="font-semibold">{item.name}</h3>
-                    <p className="text-purple-600 font-bold">${item.price.toFixed(2)}</p>
+                    <p className="text-purple-600 font-bold">{formatPrice(item.price)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
@@ -47,7 +48,7 @@ export const Cart = () => {
                     </button>
                   </div>
                   <p className="font-semibold w-24 text-right">
-                    ${(item.price * item.quantity).toFixed(2)}
+                    {formatPrice(item.price * item.quantity)}
                   </p>
                   <button
                     onClick={() => guest.removeItem(item.productId)}
@@ -58,7 +59,7 @@ export const Cart = () => {
                 </div>
               ))}
               <div className="mt-8 text-right">
-                <p className="text-2xl font-bold">Subtotal: ${guest.subtotal().toFixed(2)}</p>
+                <p className="text-2xl font-bold">Subtotal: {formatPrice(guest.subtotal())}</p>
                 <p className="text-sm text-gray-500 mt-1">Shipping &amp; tax calculated at checkout</p>
                 <Link
                   to="/login"
@@ -75,7 +76,7 @@ export const Cart = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8">
       <div className="container mx-auto px-4">
         <h1 className="text-3xl font-bold mb-8">Shopping Cart</h1>
         {items.length === 0 ? (
@@ -86,13 +87,13 @@ export const Cart = () => {
             </Link>
           </div>
         ) : (
-          <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
             {items.map((item) => (
               <div key={item.id} className="flex items-center gap-4 py-4 border-b">
                 <img src={item.productImage} alt={item.productName} className="w-20 h-20 object-cover rounded" />
                 <div className="flex-1">
                   <h3 className="font-semibold">{item.productName}</h3>
-                  <p className="text-purple-600 font-bold">${item.unitPrice.toFixed(2)}</p>
+                  <p className="text-purple-600 font-bold">{formatPrice(item.unitPrice)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -109,7 +110,7 @@ export const Cart = () => {
                     +
                   </button>
                 </div>
-                <p className="font-semibold w-24 text-right">${item.totalPrice.toFixed(2)}</p>
+                <p className="font-semibold w-24 text-right">{formatPrice(item.totalPrice)}</p>
                 <button
                   onClick={() => removeItem(item.productId)}
                   className="text-red-500 hover:text-red-700"
@@ -119,7 +120,7 @@ export const Cart = () => {
               </div>
             ))}
             <div className="mt-8 text-right">
-              <p className="text-2xl font-bold">Total: ${total.toFixed(2)}</p>
+              <p className="text-2xl font-bold">Total: {formatPrice(total)}</p>
               <Link
                 to="/checkout"
                 className="bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-purple-700 transition inline-block mt-4"

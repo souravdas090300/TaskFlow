@@ -20,7 +20,9 @@ client.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    throw error;
+  }
 );
 
 function clearAdminAuthAndRedirect() {
@@ -37,7 +39,7 @@ client.interceptors.response.use(
     const originalRequest = error.config;
     if (error.response?.status !== 401 || originalRequest?._retried) {
       if (error.response?.status === 401) clearAdminAuthAndRedirect();
-      return Promise.reject(error);
+      throw error;
     }
 
     originalRequest._retried = true;
@@ -47,7 +49,7 @@ client.interceptors.response.use(
       return client(originalRequest);
     } catch {
       clearAdminAuthAndRedirect();
-      return Promise.reject(error);
+      throw error;
     }
   }
 );
@@ -222,7 +224,7 @@ export interface PaymentIssue {
   orderId?: string;
   orderNumber?: string;
   paymentIntentId: string;
-  type: 'OrderNotFound' | 'OrderClosed' | 'DoubleCharge' | 'StockConflict' | string;
+  type: string;
   details: string;
   createdAt: string;
 }

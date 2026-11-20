@@ -11,8 +11,8 @@ export const AdminLayout = () => {
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/admin/login');
+    void logout();
+    void navigate('/admin/login');
   };
 
   return (

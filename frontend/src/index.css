@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
-html {
-  scroll-behavior: smooth;
+@custom-variant dark (&:where(.dark, .dark *));
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {
@@ -9,12 +13,16 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+html.dark body {
+  background-color: #020617;
+  color: #e2e8f0;
+}
+
 ::selection {
-  background: #8b5cf6;
+  background: #4c1d95;
   color: #fff;
 }
 
-/* Subtle scrollbar */
 ::-webkit-scrollbar {
   width: 10px;
 }
@@ -28,34 +36,3 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #6d28d9;
 }
-
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-12px); }
-}
-
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(24px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.animate-float { animation: float 6s ease-in-out infinite; }
-.animate-fade-in-up { animation: fade-in-up 0.7s ease-out both; }
-.animate-fade-in-up-delay-1 { animation: fade-in-up 0.7s ease-out 0.15s both; }
-.animate-fade-in-up-delay-2 { animation: fade-in-up 0.7s ease-out 0.3s both; }
-.animate-fade-in-up-delay-3 { animation: fade-in-up 0.7s ease-out 0.45s both; }
-
-@keyframes marquee {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-.animate-marquee { animation: marquee 30s linear infinite; }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-

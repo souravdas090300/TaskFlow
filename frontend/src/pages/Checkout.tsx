@@ -4,6 +4,7 @@ import { ordersApi } from '../api/orders';
 import { confirmCashOnDelivery, startStripeCheckout } from '../api/stripe';
 import { useCartStore } from '../store/useCartStore';
 import { useNavigate } from 'react-router-dom';
+import { formatPrice } from '../utils/format';
 
 export const Checkout = () => {
   const { data: checkout } = useQuery({
@@ -44,11 +45,11 @@ export const Checkout = () => {
   if (!checkout) return <div>Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 py-8">
       <div className="container mx-auto px-4">
         <h1 className="text-3xl font-bold mb-8">Checkout</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
             <h2 className="text-xl font-bold mb-4">Shipping Address</h2>
             <select
               value={selectedAddress}
@@ -83,30 +84,30 @@ export const Checkout = () => {
             </button>
           </div>
 
-          <div className="bg-white rounded-lg shadow-md p-8">
+          <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
             <h2 className="text-xl font-bold mb-4">Order Summary</h2>
             {checkout.items.map((item) => (
               <div key={item.id} className="flex justify-between py-2 border-b">
                 <span>{item.productName} x {item.quantity}</span>
-                <span>${item.totalPrice.toFixed(2)}</span>
+                <span>{formatPrice(item.totalPrice)}</span>
               </div>
             ))}
             <div className="mt-4 space-y-2">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span>${checkout.subtotal.toFixed(2)}</span>
+                <span>{formatPrice(checkout.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Tax (18%):</span>
-                <span>${checkout.tax.toFixed(2)}</span>
+                <span>{formatPrice(checkout.tax)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Shipping:</span>
-                <span>${checkout.shipping.toFixed(2)}</span>
+                <span>{formatPrice(checkout.shipping)}</span>
               </div>
               <div className="flex justify-between font-bold text-xl mt-4 pt-4 border-t">
                 <span>Total:</span>
-                <span>${checkout.total.toFixed(2)}</span>
+                <span>{formatPrice(checkout.total)}</span>
               </div>
             </div>
           </div>

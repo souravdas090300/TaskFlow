@@ -9,6 +9,7 @@ import {
   type UpdateProductPayload,
 } from '../api/admin';
 import type { Product, ProductImage, ProductListItem, ProductVariant } from '../api/products';
+import { formatPrice } from '../utils/format';
 
 const emptyProductForm = {
   name: '',
@@ -124,7 +125,7 @@ export default function AdminProducts() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       const base = {
         name: form.name.trim(),
         description: form.description.trim(),
@@ -213,6 +214,10 @@ export default function AdminProducts() {
   const updateField = <K extends keyof typeof emptyProductForm>(key: K, value: (typeof emptyProductForm)[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
+
+  let submitLabel = 'Create product';
+  if (editingProduct) submitLabel = 'Save changes';
+  if (saveMutation.isPending) submitLabel = 'Saving...';
 
   if (isLoading) return <div className="p-8 text-gray-600">Loading products...</div>;
   if (error) return <div className="p-8 text-red-600">Error loading products</div>;
@@ -314,12 +319,10 @@ export default function AdminProducts() {
 
           <div className="flex flex-wrap gap-6">
             <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={form.isFeatured} onChange={(event) => updateField('isFeatured', event.target.checked)} />
-              Featured
+              <input type="checkbox" checked={form.isFeatured} onChange={(event) => updateField('isFeatured', event.target.checked)} /> Featured
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={form.isNewArrival} onChange={(event) => updateField('isNewArrival', event.target.checked)} />
-              New arrival
+              <input type="checkbox" checked={form.isNewArrival} onChange={(event) => updateField('isNewArrival', event.target.checked)} /> New arrival
             </label>
           </div>
 
@@ -328,7 +331,7 @@ export default function AdminProducts() {
           <div className="flex justify-end gap-3">
             <button type="button" onClick={closeForm} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
             <button type="submit" disabled={saveMutation.isPending} className="bg-purple-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:bg-gray-300">
-              {saveMutation.isPending ? 'Saving...' : editingProduct ? 'Save changes' : 'Create product'}
+              {submitLabel}
             </button>
           </div>
         </form>
@@ -366,7 +369,7 @@ export default function AdminProducts() {
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-700">{product.categoryName}</td>
-                <td className="px-6 py-4 text-sm font-medium text-gray-900">${product.price.toFixed(2)}</td>
+                <td className="px-6 py-4 text-sm font-medium text-gray-900">{formatPrice(product.price)}</td>
                 <td className="px-6 py-4 text-sm text-gray-700">{product.stock}</td>
                 <td className="px-6 py-4 text-sm">
                   <div className="flex flex-wrap gap-1">
