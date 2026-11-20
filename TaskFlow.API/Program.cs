@@ -226,7 +226,7 @@ if (!string.IsNullOrEmpty(stripeSecretKey))
 
 var app = builder.Build();
 
-await CatalogSeeder.SeedIfEmptyAsync(app.Services);
+await CatalogSeeder.SeedCatalogAsync(app.Services);
 
 // The app runs behind Nginx Proxy Manager, which sets X-Forwarded-* headers.
 var forwardedHeadersOptions = new ForwardedHeadersOptions

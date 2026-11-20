@@ -12,12 +12,6 @@ const trustItems = [
   { title: 'Tracked delivery', text: 'Every order gets a tracking number.' },
 ];
 
-const shopPoints = [
-  { title: 'Curated catalog', text: 'A focused mix of desk, kitchen, sneaker and everyday-carry picks.' },
-  { title: 'Honest pricing', text: 'Clear EUR prices, VAT and shipping shown before you pay.' },
-  { title: 'Fast checkout', text: 'Stripe for cards, cash on delivery when you prefer.' },
-];
-
 export const Home = () => {
   const { data: featuredProducts } = useQuery({
     queryKey: ['featured-products'],
@@ -34,6 +28,11 @@ export const Home = () => {
     queryFn: categoriesApi.getAll,
   });
 
+  const categoryTiles = (categories ?? [])
+    .filter((category) => (category.productCount ?? 0) >= 3)
+    .sort((a, b) => (b.productCount ?? 0) - (a.productCount ?? 0) || a.displayOrder - b.displayOrder || a.name.localeCompare(b.name))
+    .slice(0, 8);
+
   return (
     <div className="bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-slate-200">
       <section className="relative overflow-hidden bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-white/10">
@@ -49,7 +48,7 @@ export const Home = () => {
                 Good finds for <span className="text-purple-700 dark:text-purple-400">everyday life</span>
               </h1>
               <p className="mt-5 text-lg text-gray-600 dark:text-slate-400 max-w-xl">
-                Desk setups, kitchen essentials, sneakers and everyday carry — curated, fairly priced, and checkout by Stripe or cash on delivery.
+                Curated essentials for your desk, kitchen, and everyday carry. Secure Stripe checkout and fast delivery.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link to="/shop" className="bg-purple-600 text-white px-7 py-3.5 rounded-xl font-semibold hover:bg-purple-700 transition">
@@ -68,7 +67,7 @@ export const Home = () => {
         </div>
       </section>
 
-      {categories && categories.length > 0 && (
+      {categoryTiles.length > 0 && (
         <section className="container mx-auto px-4 py-14">
           <div className="flex items-end justify-between mb-8">
             <div>
@@ -78,7 +77,7 @@ export const Home = () => {
             <Link to="/shop" className="text-purple-700 dark:text-purple-400 font-semibold hover:underline">View all →</Link>
           </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {categories.slice(0, 8).map((category) => (
+            {categoryTiles.map((category) => (
               <Link
                 key={category.id}
                 to={`/shop?categoryId=${category.id}`}
@@ -132,24 +131,6 @@ export const Home = () => {
           </div>
         </section>
       )}
-
-      <section className="container mx-auto px-4 py-14">
-        <div className="bg-purple-700 rounded-3xl p-8 lg:p-12 text-white">
-          <div className="grid lg:grid-cols-3 gap-8">
-            {shopPoints.map((point) => (
-              <div key={point.title}>
-                <h3 className="text-lg font-semibold">{point.title}</h3>
-                <p className="mt-2 text-purple-100">{point.text}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mt-10">
-            <Link to="/shop" className="inline-block bg-white text-purple-700 px-8 py-3.5 rounded-xl font-bold hover:bg-purple-50 transition">
-              Browse all products
-            </Link>
-          </div>
-        </div>
-      </section>
 
       <footer className="border-t border-gray-200 dark:border-white/10 bg-white dark:bg-slate-950">
         <div className="container mx-auto px-4 py-10 grid gap-8 md:grid-cols-3 text-sm">
