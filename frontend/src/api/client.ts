@@ -45,7 +45,10 @@ export async function ensureFreshAccessToken(): Promise<void> {
 
 function clearAuthAndRedirect() {
   clearAuthStorage();
-  window.location.href = '/login';
+  const path = window.location.pathname;
+  if (path !== '/login' && path !== '/admin/login') {
+    window.location.href = '/login';
+  }
 }
 
 // Response interceptor: on 401, try one token refresh then retry the request once

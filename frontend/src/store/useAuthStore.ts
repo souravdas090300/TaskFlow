@@ -39,6 +39,11 @@ export const useAuthStore = create<AuthState>()(
       },
 
       loadUser: async () => {
+        if (!authApi.getToken()) {
+          set({ user: null, token: null, isAuthenticated: false });
+          return;
+        }
+
         try {
           const user = await authApi.getCurrentUser();
           const token = authApi.getToken();

@@ -24,7 +24,9 @@ client.interceptors.request.use(
 
 function clearAdminAuthAndRedirect() {
   clearAuthStorage();
-  window.location.href = '/admin/login';
+  if (window.location.pathname !== '/admin/login') {
+    window.location.href = '/admin/login';
+  }
 }
 
 // Response interceptor: on 401, try one token refresh then retry the request once
