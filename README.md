@@ -1,8 +1,8 @@
-# TaskFlow
+# Mercato (TaskFlow)
 
-A full-stack e-commerce portfolio app built with **.NET 10**, **React 19 + TypeScript + Vite**, **PostgreSQL 17**, **Stripe**, **Resend**, and **Docker**.
+A full-stack e-commerce portfolio app — storefront brand **Mercato** — built with **.NET 10**, **React 19 + TypeScript + Vite**, **PostgreSQL 17**, **Stripe**, **Resend**, and **Docker**.
 
-Production demo: `https://taskflow-das.duckdns.org`
+Production demo: `https://taskflow-das.duckdns.org` (test-mode Stripe payments; a demo banner is shown site-wide)
 
 ## Quick Start
 
@@ -63,11 +63,46 @@ migration: dotnet ef migrations list --project TaskFlow.Infrastructure --startup
 
 ## Production deployment
 
-Production runs on an Oracle Cloud VM behind **Nginx Proxy Manager** + **DuckDNS** (`taskflow-das.duckdns.org`).
+Production runs on an Oracle Cloud VM (`92.5.144.125`, user `ubuntu`) behind **Nginx Proxy Manager** + **DuckDNS** (`taskflow-das.duckdns.org`).
+
+### One-time VPS setup
+
+```bash
+# 1. SSH in
+ssh -i <key>.pem ubuntu@92.5.144.125
+
+# 2. Install Docker (if not present)
+sudo apt update && sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker ubuntu   # re-login after this
+
+# 3. Clone the repo
+cd ~ && git clone https://github.com/<owner>/TaskFlow.git && cd TaskFlow
+
+# 4. Create .env — either copy .env.prod.example and fill values,
+#    or let the deploy workflow generate it from GitHub secrets
+cp .env.prod.example .env
+
+# 5. Open ports 22, 80, 443 in the OCI Security List AND iptables
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+
+# 6. Start the stack (pulls prebuilt GHCR images)
+sudo docker compose pull
+sudo docker compose up -d
+```
+
+Then in **Nginx Proxy Manager** (`http://92.5.144.125:81`): add a proxy host for `taskflow-das.duckdns.org` → `http://taskflow-frontend:80`, request a Let's Encrypt certificate, and enable HTTP/2. DuckDNS keeps the subdomain pointed at the VPS IP. The frontend nginx already routes `/api`, `/health`, and `/signin-google` to the API container.
+
+Day-to-day deploys are automated — see below. Full walkthrough: [Production Deployment](docs/PRODUCTION_DEPLOYMENT.md).
 
 ### Automated deploy (Primary Method)
 
-`.github/workflows/deploy.yml` builds and pushes the API, frontend, and migrator images to GHCR on pushes to `main`, then SSHes into the VPS, resets the repo, writes `.env`, pulls images, and runs `docker compose up -d`.
+`.github/workflows/deploy.yml` builds and pushes the API, frontend, and migrator images to GHCR on pushes to `main`, then SSHes into the VPS, resets the repo, writes `.env` from GitHub secrets, pulls images, and runs `docker compose up -d` with `ASPNETCORE_ENVIRONMENT=Production`.
+
+Required GitHub secrets: `DB_PASSWORD`, `JWT_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL` (or `RESEND__FROMEMAIL`), `APP_PUBLIC_URL` (`https://taskflow-das.duckdns.org`), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `VITE_STRIPE_PUBLISHABLE_KEY` (optional — checkout redirects to a server-created Stripe session), `DUCKDNS_SUBDOMAIN`, `DUCKDNS_TOKEN`, `VPS_HOST_IP`, `VPS_USERNAME`, `VPS_SSH_PRIVATE_KEY`.
+
+In production the API refuses to start without `Jwt:Key`, `Stripe:SecretKey`, `Stripe:WebhookSecret`, Resend settings, and an absolute `App:PublicUrl` — a crash-looping `taskflow-api` after deploy almost always means one of these secrets is empty.
 
 ### Manual VPS deploy (Fallback)
 
@@ -108,7 +143,7 @@ The script registers through `/api/auth/register` if needed, then sets `Users.Ro
 - **Backend**: ASP.NET Core 10 minimal APIs, layered as API / Application / Domain / Infrastructure.
 - **Frontend**: React 19 + TypeScript + Vite, built to static files and served by nginx inside `Dockerfile.frontend`.
 - **Database**: PostgreSQL 17 + EF Core; `Dockerfile.migrator` runs the migration bundle once per deploy and is ARM64-aware.
-- **Auth**: JWT access/refresh tokens, email verification, password reset, and Google OAuth via ASP.NET Core authentication.
+- **Auth**: JWT access/refresh tokens, email verification, password reset, and Google sign-in via Google Identity Services (ID token validated server-side; new Google users are created as `Customer`).
 - **Payments**: Stripe Checkout + webhooks with idempotent handling, `PaymentReview` stock-conflict flow, and an admin payment-issues API.
 - **Email**: Resend in production, mock email service in development.
 - **Edge**: Nginx Proxy Manager terminates HTTPS and sends traffic to the frontend container; the frontend nginx proxies `/api`, `/health`, `/weatherforecast`, and `/signin-google` to the API.
@@ -116,12 +151,13 @@ The script registers through `/api/auth/register` if needed, then sets `Users.Ro
 
 ## Features
 
-- Product catalog with categories, images, variants, search, and sorting
-- Cart, addresses, checkout totals with tax/shipping rules
-- Orders via Stripe or Cash on Delivery, cancellation, admin status/tracking
+- Product catalog with categories, images, variants, search, filters, and sorting; catalog seeded/upserted by slug on API startup
+- Authenticated and guest carts (guest carts merge into the user cart on login), addresses, and saved user profiles
+- Checkout with saved-address selection, order totals with tax/shipping/free-shipping rules
+- Orders via Stripe Checkout (server-created session) or Cash on Delivery, cancellation, admin status/tracking
 - Stripe webhook idempotency, atomic stock decrement, payment issue tracking
 - Admin dashboard for stats, orders, products, categories, and payment issues
-- Public legal pages for Google OAuth review: `/privacy-policy` and `/terms-of-service` (served as static HTML so verification bots can read them without JavaScript)
+- Responsive storefront (mobile header/menu), public legal pages `/privacy-policy` and `/terms-of-service` (static HTML for verification bots)
 - Rate limiting, global exception handling, forwarded headers
 - Docker Compose dev/prod stacks, ARM64 migration bundle, backup/restore scripts
 

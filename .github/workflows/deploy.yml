@@ -122,7 +122,7 @@ jobs:
           Stripe__SecretKey=${{ secrets.STRIPE_SECRET_KEY }}
           Stripe__WebhookSecret=${{ secrets.STRIPE_WEBHOOK_SECRET }}
           Resend__ApiKey=${{ secrets.RESEND_API_KEY }}
-          Resend__FromEmail=${{ secrets.RESEND_FROMEMAIL }}
+          Resend__FromEmail=${{ secrets.RESEND_FROM_EMAIL || secrets.RESEND__FROMEMAIL }}
           App__PublicUrl=${{ secrets.APP_PUBLIC_URL }}
           DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
           DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
