@@ -118,7 +118,13 @@ jobs:
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
           DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
-          ASPNETCORE_ENVIRONMENT=Development
+          ASPNETCORE_ENVIRONMENT=Production
+          JWT__Key=${{ secrets.JWT_KEY }}
+          Stripe__SecretKey=${{ secrets.STRIPE_SECRET_KEY }}
+          Stripe__WebhookSecret=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          Resend__ApiKey=${{ secrets.RESEND_API_KEY }}
+          Resend__FromEmail=${{ secrets.RESEND_FROM_EMAIL || secrets.RESEND__FROMEMAIL }}
+          App__PublicUrl=${{ secrets.APP_PUBLIC_URL }}
           DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
           DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
           DOCKER_IMAGE_MIGRATOR=ghcr.io/${{ github.repository }}/taskflow-migrator:latest
