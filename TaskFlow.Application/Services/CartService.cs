@@ -83,6 +83,7 @@ public class CartService
         {
             existingItem.Quantity += dto.Quantity;
             existingItem.UpdatedAt = DateTime.UtcNow;
+            await _cartRepository.UpdateAsync(cart);
         }
         else
         {
@@ -96,10 +97,9 @@ public class CartService
                 UnitPrice = product.Price,
                 CreatedAt = DateTime.UtcNow
             };
-            cart.Items.Add(cartItem);
+            await _cartRepository.AddItemAsync(cartItem);
         }
 
-        await _cartRepository.UpdateAsync(cart);
         return await GetCartAsync(userId);
     }
 
