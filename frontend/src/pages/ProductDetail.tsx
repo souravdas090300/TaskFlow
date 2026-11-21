@@ -17,17 +17,23 @@ export const ProductDetail = () => {
 
   const addToCart = async () => {
     if (!product) return;
-    if (useAuthStore.getState().isAuthenticated) {
-      await addItem(product.id, 1);
-      alert('Added to cart!');
-    } else {
-      useGuestCartStore.getState().addItem({
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        imageUrl: product.images[0]?.imageUrl,
-      });
-      alert('Added to cart! Log in to check out.');
+    try {
+      if (useAuthStore.getState().isAuthenticated) {
+        await addItem(product.id, 1);
+        alert('Added to cart!');
+      } else {
+        useGuestCartStore.getState().addItem({
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          imageUrl: product.images[0]?.imageUrl,
+        });
+        alert('Added to cart! Log in to check out.');
+      }
+    } catch (error) {
+      const data = (error as { response?: { data?: unknown } })?.response?.data;
+      console.error('Add to cart failed', data ?? error);
+      alert('Could not add to cart');
     }
   };
 

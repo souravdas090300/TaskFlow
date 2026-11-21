@@ -90,21 +90,21 @@ export const Cart = () => {
           <div className="bg-white dark:bg-slate-900 rounded-lg shadow-md p-8 border border-gray-200 dark:border-white/10">
             {items.map((item) => (
               <div key={item.id} className="flex items-center gap-4 py-4 border-b">
-                <img src={item.productImage} alt={item.productName} className="w-20 h-20 object-cover rounded" />
+                <img src={item.productImageUrl ?? item.productImage} alt={item.productName} className="w-20 h-20 object-cover rounded" />
                 <div className="flex-1">
                   <h3 className="font-semibold">{item.productName}</h3>
                   <p className="text-purple-600 font-bold">{formatPrice(item.unitPrice)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => updateItem(item.productId, Math.max(1, item.quantity - 1))}
+                    onClick={() => updateItem(item.id, Math.max(1, item.quantity - 1))}
                     className="px-3 py-1 border rounded"
                   >
                     -
                   </button>
                   <span>{item.quantity}</span>
                   <button
-                    onClick={() => updateItem(item.productId, item.quantity + 1)}
+                    onClick={() => updateItem(item.id, item.quantity + 1)}
                     className="px-3 py-1 border rounded"
                   >
                     +
@@ -112,7 +112,7 @@ export const Cart = () => {
                 </div>
                 <p className="font-semibold w-24 text-right">{formatPrice(item.totalPrice)}</p>
                 <button
-                  onClick={() => removeItem(item.productId)}
+                  onClick={() => removeItem(item.id)}
                   className="text-red-500 hover:text-red-700"
                 >
                   Remove

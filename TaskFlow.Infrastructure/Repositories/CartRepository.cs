@@ -27,6 +27,7 @@ public class CartRepository : ICartRepository
                     .ThenInclude(p => p.Images)
             .Include(c => c.Items)
                 .ThenInclude(i => i.ProductVariant)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(c => c.UserId == userId);
     }
 

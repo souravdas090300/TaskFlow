@@ -15,18 +15,23 @@ export const ProductCard = ({ product }: { product: ProductListItem }) => {
     event.preventDefault();
     event.stopPropagation();
     if (product.stock <= 0) return;
-    if (isAuthenticated) {
-      await addItem(product.id, 1);
-    } else {
-      useGuestCartStore.getState().addItem({
-        productId: product.id,
-        name: product.name,
-        price: product.price,
-        imageUrl: product.primaryImageUrl,
-      });
+    try {
+      if (isAuthenticated) {
+        await addItem(product.id, 1);
+      } else {
+        useGuestCartStore.getState().addItem({
+          productId: product.id,
+          name: product.name,
+          price: product.price,
+          imageUrl: product.primaryImageUrl,
+        });
+      }
+      setAdded(true);
+      window.setTimeout(() => setAdded(false), 1200);
+    } catch (error) {
+      const data = (error as { response?: { data?: unknown } })?.response?.data;
+      console.error('Add to cart failed', data ?? error);
     }
-    setAdded(true);
-    window.setTimeout(() => setAdded(false), 1200);
   };
 
   return (

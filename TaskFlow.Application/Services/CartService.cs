@@ -10,12 +10,14 @@ public class CartService
     private readonly ICartRepository _cartRepository;
     private readonly IProductRepository _productRepository;
     private readonly IConfiguration _configuration;
+    private readonly IUserDirectory? _userDirectory;
 
-    public CartService(ICartRepository cartRepository, IProductRepository productRepository, IConfiguration configuration)
+    public CartService(ICartRepository cartRepository, IProductRepository productRepository, IConfiguration configuration, IUserDirectory? userDirectory = null)
     {
         _cartRepository = cartRepository;
         _productRepository = productRepository;
         _configuration = configuration;
+        _userDirectory = userDirectory;
     }
 
     public async Task<CartDto> GetCartAsync(Guid userId)
@@ -24,6 +26,11 @@ public class CartService
 
         if (cart == null)
         {
+            if (_userDirectory != null && await _userDirectory.GetContactAsync(userId) == null)
+            {
+                throw new UnauthorizedAccessException("User not found");
+            }
+
             cart = new Cart
             {
                 Id = Guid.NewGuid(),
@@ -42,6 +49,11 @@ public class CartService
 
         if (cart == null)
         {
+            if (_userDirectory != null && await _userDirectory.GetContactAsync(userId) == null)
+            {
+                throw new UnauthorizedAccessException("User not found");
+            }
+
             cart = new Cart
             {
                 Id = Guid.NewGuid(),
@@ -57,15 +69,15 @@ public class CartService
             throw new InvalidOperationException("Product not found");
         }
 
-        var availableStock = product.Stock;
-        if (availableStock < dto.Quantity)
-        {
-            throw new InvalidOperationException("Insufficient stock");
-        }
-
         var existingItem = cart.Items.FirstOrDefault(i =>
             i.ProductId == dto.ProductId &&
             i.ProductVariantId == dto.ProductVariantId);
+
+        var quantityAfterAdd = (existingItem?.Quantity ?? 0) + dto.Quantity;
+        if (product.Stock < quantityAfterAdd)
+        {
+            throw new InvalidOperationException("Insufficient stock");
+        }
 
         if (existingItem != null)
         {

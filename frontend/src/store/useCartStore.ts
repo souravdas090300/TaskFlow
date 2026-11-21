@@ -45,8 +45,8 @@ export const useCartStore = create<CartState>((set) => ({
     });
   },
 
-  updateItem: async (productId, quantity) => {
-    await cartApi.updateItem(productId, quantity);
+  updateItem: async (cartItemId, quantity) => {
+    await cartApi.updateItem(cartItemId, quantity);
     const cart = await cartApi.getCart();
     set({
       items: cart.items,
@@ -57,8 +57,8 @@ export const useCartStore = create<CartState>((set) => ({
     });
   },
 
-  removeItem: async (productId) => {
-    await cartApi.removeItem(productId);
+  removeItem: async (cartItemId) => {
+    await cartApi.removeItem(cartItemId);
     const cart = await cartApi.getCart();
     set({
       items: cart.items,

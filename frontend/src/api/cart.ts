@@ -6,6 +6,7 @@ export interface CartItem {
   productId: string;
   productName: string;
   productImage?: string;
+  productImageUrl?: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -32,13 +33,13 @@ export const cartApi = {
     return response.data;
   },
 
-  updateItem: async (productId: string, quantity: number) => {
-    const response = await api.put(`/cart/items/${productId}`, { quantity });
+  updateItem: async (itemId: string, quantity: number) => {
+    const response = await api.put(`/cart/items/${itemId}`, { quantity });
     return response.data;
   },
 
-  removeItem: async (productId: string) => {
-    const response = await api.delete(`/cart/items/${productId}`);
+  removeItem: async (itemId: string) => {
+    const response = await api.delete(`/cart/items/${itemId}`);
     return response.data;
   },
 
