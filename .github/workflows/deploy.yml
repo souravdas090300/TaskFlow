@@ -106,30 +106,28 @@ jobs:
           set -e
           cd /home/${{ secrets.VPS_USERNAME }}/TaskFlow || exit 1
           
-          # Force sync with GitHub to overwrite any manual edits on the server
           git fetch origin main
           git reset --hard origin/main
           
           echo "${{ secrets.GITHUB_TOKEN }}" | sudo docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # NOTE: The following lines MUST have no leading spaces to avoid bash errors
-cat << EOF > .env
-DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
-DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
-ASPNETCORE_ENVIRONMENT=Production
-JWT__Key=${{ secrets.JWT_KEY }}
-Stripe__SecretKey=${{ secrets.STRIPE_SECRET_KEY }}
-Stripe__WebhookSecret=${{ secrets.STRIPE_WEBHOOK_SECRET }}
-Resend__ApiKey=${{ secrets.RESEND_API_KEY }}
-Resend__FromEmail=${{ secrets.RESEND_FROMEMAIL }}
-App__PublicUrl=${{ secrets.APP_PUBLIC_URL }}
-DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
-DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
-DOCKER_IMAGE_MIGRATOR=ghcr.io/${{ github.repository }}/taskflow-migrator:latest
-EOF
+          cat << EOF > .env
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DUCKDNS_SUBDOMAIN=${{ secrets.DUCKDNS_SUBDOMAIN }}
+          DUCKDNS_TOKEN=${{ secrets.DUCKDNS_TOKEN }}
+          ASPNETCORE_ENVIRONMENT=Production
+          JWT__Key=${{ secrets.JWT_KEY }}
+          Stripe__SecretKey=${{ secrets.STRIPE_SECRET_KEY }}
+          Stripe__WebhookSecret=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          Resend__ApiKey=${{ secrets.RESEND_API_KEY }}
+          Resend__FromEmail=${{ secrets.RESEND_FROMEMAIL }}
+          App__PublicUrl=${{ secrets.APP_PUBLIC_URL }}
+          DOCKER_IMAGE_API=ghcr.io/${{ github.repository }}/taskflow-api:latest
+          DOCKER_IMAGE_FRONTEND=ghcr.io/${{ github.repository }}/taskflow-frontend:latest
+          DOCKER_IMAGE_MIGRATOR=ghcr.io/${{ github.repository }}/taskflow-migrator:latest
+          EOF
           
           sudo docker compose pull
           sudo docker compose up -d --remove-orphans
